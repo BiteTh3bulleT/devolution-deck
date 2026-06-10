@@ -3,8 +3,9 @@
 use crate::assistant;
 use crate::audio::recording::RecordingHandle;
 use crate::audio::{
-    compute_waveform_peaks, render_playback_preview, render_project_for_realtime_playback,
-    render_project_track, render_project_tracks, write_wav_mono, PlaybackHandle,
+    compute_waveform_peaks, export_project_mixdown_to_wav, render_playback_preview,
+    render_project_for_realtime_playback, render_project_track, render_project_tracks,
+    write_wav_mono, PlaybackHandle,
 };
 use crate::deck;
 use crate::models::{
@@ -1514,6 +1515,66 @@ pub fn stem_export_start(
         status: "completed".to_string(),
         output_dir: output_dir.to_string_lossy().to_string(),
         output_files,
+        created_unix_ms: now,
+        completed_unix_ms: Some(now),
+    };
+    project.render_jobs.push(job.clone());
+    if project.render_jobs.len() > 400 {
+        let trim = project.render_jobs.len() - 400;
+        project.render_jobs.drain(0..trim);
+    }
+    Ok(job)
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct MixdownExportConfig {
+    pub output_dir: String,
+    pub file_name: Option<String>,
+    pub start_secs: Option<f64>,
+    pub end_secs: Option<f64>,
+}
+
+/// Export the master arrangement mixdown through the same shared summing path
+/// used by realtime transport playback (live/export parity).
+#[tauri::command]
+pub fn mixdown_export_start(
+    state: State<AppState>,
+    config: MixdownExportConfig,
+) -> Result<RenderJob, String> {
+    let mut project = state.project.lock().map_err(|_| "lock")?;
+    let start_secs = config.start_secs.unwrap_or(0.0).max(0.0);
+    if let Some(end_secs) = config.end_secs {
+        if end_secs <= start_secs {
+            return Err("Mixdown end must be after the start position".to_string());
+        }
+    }
+
+    let output_dir = PathBuf::from(&config.output_dir);
+    let output_dir = validate_path_safe(&output_dir)?;
+    std::fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
+
+    let file_name = config
+        .file_name
+        .as_ref()
+        .map(|value| sanitize_filename(value))
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| format!("{}_mixdown", sanitize_filename(&project.title)));
+    let file_name = if file_name.to_lowercase().ends_with(".wav") {
+        file_name
+    } else {
+        format!("{file_name}.wav")
+    };
+    let output_path = output_dir.join(file_name);
+
+    export_project_mixdown_to_wav(&project, &output_path, start_secs, config.end_secs)?;
+
+    let now = now_unix_ms();
+    let job = RenderJob {
+        id: Uuid::new_v4().to_string(),
+        kind: "mixdown_export".to_string(),
+        status: "completed".to_string(),
+        output_dir: output_dir.to_string_lossy().to_string(),
+        output_files: vec![output_path.to_string_lossy().to_string()],
         created_unix_ms: now,
         completed_unix_ms: Some(now),
     };

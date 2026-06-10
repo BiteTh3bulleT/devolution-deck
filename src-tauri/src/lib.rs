@@ -68,6 +68,7 @@ pub fn run() {
             commands::sidechain_route_update,
             commands::sidechain_route_remove,
             commands::stem_export_start,
+            commands::mixdown_export_start,
             commands::track_freeze,
             commands::track_unfreeze,
             commands::track_render_in_place,

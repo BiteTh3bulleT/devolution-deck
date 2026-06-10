@@ -22,6 +22,8 @@ export function RenderPanel() {
   const [includeMuted, setIncludeMuted] = useState(false);
   const [skipSilentTracks, setSkipSilentTracks] = useState(true);
   const [filenamePrefix, setFilenamePrefix] = useState("");
+  const [mixdownFileName, setMixdownFileName] = useState("");
+  const [mixdownUseRange, setMixdownUseRange] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -69,6 +71,60 @@ export function RenderPanel() {
             Browse
           </button>
         </div>
+      </div>
+
+      <div className="rounded border border-deck-border bg-deck-panel p-2 space-y-2">
+        <p className="text-[11px] uppercase tracking-wide text-deck-text-muted">Master Mixdown</p>
+        <p className="text-[10px] text-deck-text-muted">
+          Exports the arrangement through the same summing path as transport playback.
+        </p>
+        <label className="text-[11px] text-deck-text-muted flex flex-col gap-1">
+          File Name
+          <input
+            value={mixdownFileName}
+            onChange={(event) => setMixdownFileName(event.target.value)}
+            className="rounded border border-deck-border bg-deck-surface px-2 py-1 text-[11px]"
+            placeholder="defaults to <project>_mixdown.wav"
+          />
+        </label>
+        <label className="text-[11px] text-deck-text-muted flex items-center gap-2">
+          <input
+            type="checkbox"
+            checked={mixdownUseRange}
+            onChange={(event) => setMixdownUseRange(event.target.checked)}
+          />
+          Limit to range {rangeStart}s – {rangeEnd}s
+        </label>
+        <button
+          type="button"
+          disabled={busy !== null || (mixdownUseRange && rangeEnd <= rangeStart)}
+          onClick={async () => {
+            setBusy("mixdown");
+            setError(null);
+            try {
+              const job = await api.mixdownExportStart({
+                output_dir: outputDir,
+                file_name: mixdownFileName.trim() || undefined,
+                start_secs: mixdownUseRange ? rangeStart : undefined,
+                end_secs: mixdownUseRange ? rangeEnd : undefined,
+              });
+              if (project) {
+                const nextJobs = [...project.render_jobs, job].slice(-400);
+                setProject({
+                  ...project,
+                  render_jobs: nextJobs,
+                });
+              }
+            } catch (e) {
+              setError(String(e));
+            } finally {
+              setBusy(null);
+            }
+          }}
+          className="w-full rounded border border-deck-cyan/40 bg-deck-cyan/10 text-deck-cyan text-[11px] px-2 py-1 disabled:opacity-50"
+        >
+          Export Mixdown
+        </button>
       </div>
 
       <div className="rounded border border-deck-border bg-deck-panel p-2 space-y-2">

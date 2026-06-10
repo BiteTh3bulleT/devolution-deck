@@ -21,6 +21,7 @@ import type {
   UserPreferences,
   ShortcutBinding,
   StemExportConfig,
+  MixdownExportConfig,
   DeviceDiagnosticState,
   DeviceProfile,
   CompatibilityReport,
@@ -312,6 +313,10 @@ export async function sidechainRouteRemove(routeId: string): Promise<void> {
 
 export async function stemExportStart(config: StemExportConfig): Promise<RenderJob> {
   return invoke<RenderJob>("stem_export_start", { config });
+}
+
+export async function mixdownExportStart(config: MixdownExportConfig): Promise<RenderJob> {
+  return invoke<RenderJob>("mixdown_export_start", { config });
 }
 
 export async function trackFreeze(trackId: string, outputDir: string): Promise<Track> {

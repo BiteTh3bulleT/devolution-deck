@@ -317,6 +317,13 @@ export interface StemExportConfig {
   filename_prefix?: string;
 }
 
+export interface MixdownExportConfig {
+  output_dir: string;
+  file_name?: string;
+  start_secs?: number;
+  end_secs?: number;
+}
+
 export interface TakeClip {
   id: string;
   media_asset_id: string;
