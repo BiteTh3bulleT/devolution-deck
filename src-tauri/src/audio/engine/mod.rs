@@ -74,6 +74,8 @@ pub fn prepare_project_playback(
     })
 }
 
+/// Buffer-only variant of `prepare_project_playback`, kept for parity tests.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn render_project_for_realtime_playback(
     project: &Project,
     start_secs: f64,

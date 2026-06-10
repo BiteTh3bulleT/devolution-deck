@@ -30,6 +30,9 @@ fn interpolate(left: &crate::models::AutomationPoint, right: &crate::models::Aut
     left.value + (right.value - left.value) * shaped
 }
 
+/// Single-point evaluation; rendering uses `LaneSampler`. Kept public for
+/// commands that need a one-off value and for the semantics tests.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn evaluate_lane(lane: &AutomationLane, time_secs: f64, fallback: f64) -> f64 {
     if !lane.enabled || lane.points.is_empty() {
         return fallback;

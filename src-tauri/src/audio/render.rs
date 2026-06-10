@@ -691,6 +691,8 @@ pub fn write_wav(
     writer.finalize().map_err(|e| e.to_string())
 }
 
+/// Mono convenience wrapper, used by recording/engine tests.
+#[cfg_attr(not(test), allow(dead_code))]
 pub fn write_wav_mono(path: &Path, sample_rate: u32, samples: &[f32]) -> Result<(), String> {
     write_wav(path, sample_rate, 1, samples)
 }
