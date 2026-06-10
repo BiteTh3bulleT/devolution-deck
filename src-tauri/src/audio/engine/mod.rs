@@ -1,5 +1,6 @@
 //! Realtime arrangement engine primitives.
 
+pub mod meters;
 pub mod mixer;
 pub mod render_shared;
 
@@ -23,10 +24,16 @@ fn mix_rendered_tracks_audible(
     sample_rate: u32,
     start_secs: f64,
     end_secs: Option<f64>,
+    master_gain_db: f64,
 ) -> Result<ArrangementPlaybackBuffer, String> {
     let start_secs = start_secs.max(0.0);
-    let mixdown =
-        render_shared::mix_rendered_tracks(rendered_tracks, sample_rate, start_secs, end_secs)?;
+    let mixdown = render_shared::mix_rendered_tracks(
+        rendered_tracks,
+        sample_rate,
+        start_secs,
+        end_secs,
+        master_gain_db,
+    )?;
 
     if mixdown
         .samples
@@ -44,7 +51,7 @@ pub fn mix_rendered_tracks_for_playback(
     sample_rate: u32,
     start_secs: f64,
 ) -> Result<ArrangementPlaybackBuffer, String> {
-    mix_rendered_tracks_audible(rendered_tracks, sample_rate, start_secs, None)
+    mix_rendered_tracks_audible(rendered_tracks, sample_rate, start_secs, None, 0.0)
 }
 
 pub fn mix_rendered_tracks_for_export(
@@ -53,15 +60,39 @@ pub fn mix_rendered_tracks_for_export(
     start_secs: f64,
     end_secs: Option<f64>,
 ) -> Result<ArrangementPlaybackBuffer, String> {
-    mix_rendered_tracks_audible(rendered_tracks, sample_rate, start_secs, end_secs)
+    mix_rendered_tracks_audible(rendered_tracks, sample_rate, start_secs, end_secs, 0.0)
+}
+
+/// Master playback buffer plus the per-track buffers it was mixed from,
+/// kept so meters can read the actual rendered signal at the engine clock.
+pub struct ArrangementPlayback {
+    pub buffer: ArrangementPlaybackBuffer,
+    pub rendered_tracks: Vec<RenderedTrack>,
+}
+
+pub fn prepare_project_playback(
+    project: &Project,
+    start_secs: f64,
+) -> Result<ArrangementPlayback, String> {
+    let rendered_tracks = render_project_tracks(project, false)?;
+    let buffer = mix_rendered_tracks_audible(
+        &rendered_tracks,
+        project.sample_rate.max(8000),
+        start_secs,
+        None,
+        project.master_gain_db,
+    )?;
+    Ok(ArrangementPlayback {
+        buffer,
+        rendered_tracks,
+    })
 }
 
 pub fn render_project_for_realtime_playback(
     project: &Project,
     start_secs: f64,
 ) -> Result<ArrangementPlaybackBuffer, String> {
-    let rendered_tracks = render_project_tracks(project, false)?;
-    mix_rendered_tracks_for_playback(&rendered_tracks, project.sample_rate.max(8000), start_secs)
+    Ok(prepare_project_playback(project, start_secs)?.buffer)
 }
 
 pub fn render_project_for_export(
@@ -70,11 +101,12 @@ pub fn render_project_for_export(
     end_secs: Option<f64>,
 ) -> Result<ArrangementPlaybackBuffer, String> {
     let rendered_tracks = render_project_tracks(project, false)?;
-    mix_rendered_tracks_for_export(
+    mix_rendered_tracks_audible(
         &rendered_tracks,
         project.sample_rate.max(8000),
         start_secs,
         end_secs,
+        project.master_gain_db,
     )
 }
 
@@ -133,6 +165,30 @@ mod tests {
             armed: false,
         });
         project
+    }
+
+    #[test]
+    fn master_gain_scales_live_and_export_identically() {
+        let mut unity_project = midi_test_project();
+        unity_project.master_gain_db = 0.0;
+        let mut halved_project = midi_test_project();
+        halved_project.master_gain_db = -6.020599913279624;
+
+        let unity =
+            super::render_project_for_realtime_playback(&unity_project, 0.0).expect("unity");
+        let live =
+            super::render_project_for_realtime_playback(&halved_project, 0.0).expect("live");
+        let export =
+            super::render_project_for_export(&halved_project, 0.0, None).expect("export");
+
+        assert_eq!(live.samples, export.samples);
+        assert_eq!(live.samples.len(), unity.samples.len());
+        for (halved, full) in live.samples.iter().zip(unity.samples.iter()) {
+            assert!(
+                (halved - full * 0.5).abs() < 1e-4,
+                "expected {halved} to be half of {full}"
+            );
+        }
     }
 
     #[test]
@@ -251,10 +307,10 @@ mod tests {
             },
         ];
 
-        let full =
-            super::render_shared::mix_rendered_tracks(&tracks, 4, 0.0, None).expect("full mixdown");
-        let live =
-            super::render_shared::mix_rendered_tracks(&tracks, 4, 0.25, None).expect("live slice");
+        let full = super::render_shared::mix_rendered_tracks(&tracks, 4, 0.0, None, 0.0)
+            .expect("full mixdown");
+        let live = super::render_shared::mix_rendered_tracks(&tracks, 4, 0.25, None, 0.0)
+            .expect("live slice");
 
         assert_eq!(full.samples, vec![0.2, 0.5, 0.5, 0.5]);
         assert_eq!(live.samples, full.samples[1..].to_vec());

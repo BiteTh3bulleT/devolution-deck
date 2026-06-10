@@ -1936,6 +1936,9 @@ pub struct Project {
     /// Phase 7 show engine, cue sequencing, safety and device binding domain.
     #[serde(default)]
     pub show_project: ShowProject,
+    /// Master output gain in dB, applied identically to live playback and export.
+    #[serde(default)]
+    pub master_gain_db: f64,
 }
 
 impl Project {
@@ -2001,6 +2004,7 @@ impl Default for Project {
             deck_event_bindings: Vec::new(),
             deck_scene_links: Vec::new(),
             show_project: ShowProject::default(),
+            master_gain_db: 0.0,
         }
     }
 }

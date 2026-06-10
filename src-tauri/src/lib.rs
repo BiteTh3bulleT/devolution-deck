@@ -24,6 +24,7 @@ pub fn run() {
             project_path: std::sync::Mutex::new(None),
             playback,
             recording: std::sync::Mutex::new(None),
+            meter_source: std::sync::Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             // Phase 1
@@ -38,6 +39,7 @@ pub fn run() {
             commands::clip_place,
             commands::playback_play,
             commands::playback_play_arrangement,
+            commands::playback_meters,
             commands::playback_stop,
             commands::playback_position_ms,
             commands::playback_is_playing,

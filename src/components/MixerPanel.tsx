@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import * as api from "../api";
 import { useProjectStore } from "../stores/projectStore";
 import { useMixerStore } from "../stores/mixerStore";
 import { useTransportStore } from "../stores/transportStore";
@@ -6,9 +8,42 @@ function dbLabel(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(1)} dB`;
 }
 
+function MeterBar({ peak }: { peak: number }) {
+  const width = Math.min(100, Math.round(peak * 100));
+  const color = peak >= 0.99 ? "bg-red-400" : peak > 0.8 ? "bg-amber-300" : "bg-deck-cyan";
+  return (
+    <div className="h-1.5 w-full rounded bg-deck-surface overflow-hidden">
+      <div className={`h-full ${color}`} style={{ width: `${width}%` }} />
+    </div>
+  );
+}
+
 export function MixerPanel() {
   const project = useProjectStore((s) => s.project);
+  const setProject = useProjectStore((s) => s.setProject);
   const positionSecs = useTransportStore((s) => s.positionSecs);
+  const transportStatus = useTransportStore((s) => s.status);
+  const [meters, setMeters] = useState<api.MeterReport | null>(null);
+
+  useEffect(() => {
+    if (transportStatus !== "playing") {
+      setMeters(null);
+      return;
+    }
+    let cancelled = false;
+    const interval = window.setInterval(async () => {
+      try {
+        const report = await api.playbackMeters();
+        if (!cancelled) setMeters(report.is_playing ? report : null);
+      } catch {
+        if (!cancelled) setMeters(null);
+      }
+    }, 100);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [transportStatus]);
   const addReturnTrack = useMixerStore((s) => s.addReturnTrack);
   const addBusTrack = useMixerStore((s) => s.addBusTrack);
   const assignTrackToBus = useMixerStore((s) => s.assignTrackToBus);
@@ -52,11 +87,40 @@ export function MixerPanel() {
         </div>
       </div>
 
+      <div className="rounded border border-deck-cyan/30 bg-deck-panel p-2 space-y-2">
+        <div className="flex items-center justify-between">
+          <p className="text-xs text-deck-text">Master</p>
+          <span className="text-[10px] text-deck-text-muted">{dbLabel(project.master_gain_db ?? 0)}</span>
+        </div>
+        <label className="flex flex-col gap-1 text-[10px]">
+          <span className="text-deck-text-muted">Master Gain</span>
+          <input
+            type="range"
+            min={-60}
+            max={12}
+            step={0.1}
+            value={project.master_gain_db ?? 0}
+            onChange={async (event) => {
+              const next = { ...project, master_gain_db: Number(event.target.value) };
+              setProject(next);
+              try {
+                await api.projectUpdate(next);
+              } catch {
+                // keep optimistic value; next project sync corrects drift
+              }
+            }}
+          />
+        </label>
+        <MeterBar peak={meters?.master_peak ?? 0} />
+      </div>
+
       <div className="space-y-2">
         {tracks.map((track) => {
           const autoVolume = effectiveTrackVolumeDb(project, track.id, positionSecs);
+          const trackPeak = meters?.tracks.find((meter) => meter.track_id === track.id)?.peak ?? 0;
           return (
             <div key={track.id} className="rounded border border-deck-border bg-deck-panel p-2 space-y-2">
+              <MeterBar peak={trackPeak} />
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs text-deck-text">{track.name}</p>

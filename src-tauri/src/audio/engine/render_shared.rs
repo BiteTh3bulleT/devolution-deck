@@ -18,12 +18,18 @@ fn timeline_sample_index(seconds: f64, sample_rate: u32) -> usize {
     (seconds.max(0.0) * sample_rate.max(1) as f64).round() as usize
 }
 
+fn db_to_gain(db: f64) -> f32 {
+    (10f64.powf(db / 20.0)) as f32
+}
+
 pub fn mix_rendered_tracks(
     rendered_tracks: &[RenderedTrack],
     sample_rate: u32,
     start_secs: f64,
     end_secs: Option<f64>,
+    master_gain_db: f64,
 ) -> Result<ArrangementMixdownBuffer, String> {
+    let master_gain = db_to_gain(master_gain_db);
     if rendered_tracks.is_empty() {
         return Err("No rendered tracks available for mixdown".to_string());
     }
@@ -66,7 +72,7 @@ pub fn mix_rendered_tracks(
     }
 
     for sample in &mut samples {
-        *sample = clip_sample(*sample);
+        *sample = clip_sample(*sample * master_gain);
     }
 
     Ok(ArrangementMixdownBuffer {

@@ -4,8 +4,7 @@ use crate::assistant;
 use crate::audio::recording::RecordingHandle;
 use crate::audio::{
     compute_waveform_peaks, export_project_mixdown_to_wav, render_playback_preview,
-    render_project_for_realtime_playback, render_project_track, render_project_tracks,
-    write_wav_mono, PlaybackHandle,
+    render_project_track, render_project_tracks, write_wav_mono, PlaybackHandle,
 };
 use crate::deck;
 use crate::models::{
@@ -41,6 +40,16 @@ pub struct AppState {
     pub project_path: Mutex<Option<PathBuf>>,
     pub playback: PlaybackHandle,
     pub recording: Mutex<Option<RecordingHandle>>,
+    /// Buffers backing the current arrangement playback, retained so meters
+    /// report the actual rendered signal at the engine clock position.
+    pub meter_source: Mutex<Option<MeterSource>>,
+}
+
+pub struct MeterSource {
+    pub rendered_tracks: Vec<crate::audio::RenderedTrack>,
+    pub master: Vec<f32>,
+    pub master_start_secs: f64,
+    pub sample_rate: u32,
 }
 
 fn now_unix_ms() -> i64 {
@@ -944,22 +953,94 @@ pub fn playback_play_arrangement(
     start_secs: Option<f64>,
 ) -> Result<(), String> {
     let start_secs = start_secs.unwrap_or(0.0).max(0.0);
-    let playback_buffer = {
+    let playback = {
         let project = state.project.lock().map_err(|_| "lock")?;
-        render_project_for_realtime_playback(&project, start_secs)?
+        crate::audio::engine::prepare_project_playback(&project, start_secs)?
     };
+    {
+        let mut meter_source = state.meter_source.lock().map_err(|_| "lock")?;
+        *meter_source = Some(MeterSource {
+            rendered_tracks: playback.rendered_tracks,
+            master: playback.buffer.samples.clone(),
+            master_start_secs: playback.buffer.timeline_start_secs,
+            sample_rate: playback.buffer.sample_rate,
+        });
+    }
     state.playback.play_samples(
-        playback_buffer.samples,
-        playback_buffer.sample_rate,
-        playback_buffer.channels,
-        playback_buffer.timeline_start_secs,
+        playback.buffer.samples,
+        playback.buffer.sample_rate,
+        playback.buffer.channels,
+        playback.buffer.timeline_start_secs,
     )
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TrackMeterPayload {
+    pub track_id: String,
+    pub peak: f32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MeterReportPayload {
+    pub is_playing: bool,
+    pub position_secs: f64,
+    pub master_peak: f32,
+    pub tracks: Vec<TrackMeterPayload>,
+}
+
+/// Meters computed from the buffers the engine is actually playing.
+/// Returns zeroed meters when transport is stopped.
+#[tauri::command]
+pub fn playback_meters(state: State<AppState>) -> Result<MeterReportPayload, String> {
+    const METER_WINDOW_SECS: f64 = 0.05;
+    let position_secs = state.playback.position_ms() as f64 / 1000.0;
+    let is_playing = state.playback.is_playing();
+    let meter_source = state.meter_source.lock().map_err(|_| "lock")?;
+
+    let Some(source) = meter_source.as_ref().filter(|_| is_playing) else {
+        return Ok(MeterReportPayload {
+            is_playing,
+            position_secs,
+            master_peak: 0.0,
+            tracks: vec![],
+        });
+    };
+
+    let master_peak = crate::audio::engine::meters::peak_in_window(
+        &source.master,
+        source.sample_rate,
+        position_secs - source.master_start_secs,
+        METER_WINDOW_SECS,
+    );
+    let tracks = source
+        .rendered_tracks
+        .iter()
+        .map(|track| TrackMeterPayload {
+            track_id: track.track_id.clone(),
+            peak: crate::audio::engine::meters::peak_in_window(
+                &track.samples,
+                track.sample_rate,
+                position_secs,
+                METER_WINDOW_SECS,
+            ),
+        })
+        .collect();
+
+    Ok(MeterReportPayload {
+        is_playing,
+        position_secs,
+        master_peak,
+        tracks,
+    })
 }
 
 /// Stop playback.
 #[tauri::command]
 pub fn playback_stop(state: State<AppState>) -> Result<(), String> {
     state.playback.stop();
+    if let Ok(mut meter_source) = state.meter_source.lock() {
+        *meter_source = None;
+    }
     Ok(())
 }
 

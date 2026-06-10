@@ -319,6 +319,22 @@ export async function mixdownExportStart(config: MixdownExportConfig): Promise<R
   return invoke<RenderJob>("mixdown_export_start", { config });
 }
 
+export interface TrackMeter {
+  track_id: string;
+  peak: number;
+}
+
+export interface MeterReport {
+  is_playing: boolean;
+  position_secs: number;
+  master_peak: number;
+  tracks: TrackMeter[];
+}
+
+export async function playbackMeters(): Promise<MeterReport> {
+  return invoke<MeterReport>("playback_meters");
+}
+
 export async function trackFreeze(trackId: string, outputDir: string): Promise<Track> {
   return invoke<Track>("track_freeze", { trackId, outputDir });
 }

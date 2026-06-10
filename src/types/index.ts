@@ -1232,6 +1232,7 @@ export interface Project {
   deck_event_bindings: DeckEventBinding[];
   deck_scene_links: DeckSceneLink[];
   show_project: ShowProject;
+  master_gain_db: number;
 }
 
 // ---------------------------------------------------------------------------
