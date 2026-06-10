@@ -76,7 +76,7 @@ import type {
 } from "../types";
 
 export const TAURI_MISSING_MESSAGE =
-  "Tauri runtime not detected. Start the desktop host with `npm run tauri dev` instead of plain `npm run dev`.";
+  "Tauri runtime not detected. Start the desktop host with `npm run tauri:dev` instead of plain `npm run dev`.";
 
 type RuntimeWindow = Window & {
   __TAURI_INTERNALS__?: unknown;

@@ -362,7 +362,7 @@ export default function App() {
             This UI is running in browser-only mode (`localhost:5173`), so Tauri commands are unavailable.
           </p>
           <p className="text-sm text-deck-text-muted">
-            Start with <code>npm run tauri dev</code> to use transport, file dialogs, audio, persistence, and assistant features.
+            Start with <code>npm run tauri:dev</code> to use transport, file dialogs, audio, persistence, and assistant features.
           </p>
         </div>
       </div>
