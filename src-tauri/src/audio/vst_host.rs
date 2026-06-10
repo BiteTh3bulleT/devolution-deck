@@ -193,19 +193,19 @@ impl ExternalVstHost {
             .cloned())
     }
 
-    fn process_external_instance(
+    /// Load, initialize, and configure a plugin instance ready for processing.
+    fn prepare_external_instance(
         &mut self,
-        samples: &mut [f32],
         sample_rate: u32,
         instance: &PluginInstance,
         descriptor: &PluginDescriptor,
-    ) {
+    ) -> Option<rack::vst3::Vst3Plugin> {
         let plugin_info = match self.find_plugin_info(descriptor) {
             Ok(Some(info)) => info,
-            Ok(None) => return,
+            Ok(None) => return None,
             Err(err) => {
                 eprintln!("VST3 scan failed: {err}");
-                return;
+                return None;
             }
         };
 
@@ -213,19 +213,19 @@ impl ExternalVstHost {
             Ok(scanner) => scanner,
             Err(err) => {
                 eprintln!("VST3 scanner unavailable: {err}");
-                return;
+                return None;
             }
         };
         let mut plugin = match scanner.load(&plugin_info) {
             Ok(plugin) => plugin,
             Err(err) => {
                 eprintln!("VST3 load failed ({}): {err}", descriptor.name);
-                return;
+                return None;
             }
         };
         if let Err(err) = plugin.initialize(sample_rate as f64, MAX_BLOCK_SIZE) {
             eprintln!("VST3 init failed ({}): {err}", descriptor.name);
-            return;
+            return None;
         }
 
         if let Some(state_b64) = instance.serialized_state_b64.as_ref() {
@@ -273,6 +273,21 @@ impl ExternalVstHost {
             }
         }
 
+        Some(plugin)
+    }
+
+    fn process_external_instance(
+        &mut self,
+        samples: &mut [f32],
+        sample_rate: u32,
+        instance: &PluginInstance,
+        descriptor: &PluginDescriptor,
+    ) {
+        let Some(mut plugin) = self.prepare_external_instance(sample_rate, instance, descriptor)
+        else {
+            return;
+        };
+
         let mut in_left = vec![0.0f32; MAX_BLOCK_SIZE];
         let mut in_right = vec![0.0f32; MAX_BLOCK_SIZE];
         let mut out_left = vec![0.0f32; MAX_BLOCK_SIZE];
@@ -298,6 +313,46 @@ impl ExternalVstHost {
             for frame in 0..frames {
                 samples[cursor + frame] = 0.5 * (out_left[frame] + out_right[frame]);
             }
+            cursor += frames;
+        }
+    }
+
+    /// Process a true stereo pair through an external VST3 instance.
+    fn process_external_instance_stereo(
+        &mut self,
+        left: &mut [f32],
+        right: &mut [f32],
+        sample_rate: u32,
+        instance: &PluginInstance,
+        descriptor: &PluginDescriptor,
+    ) {
+        let Some(mut plugin) = self.prepare_external_instance(sample_rate, instance, descriptor)
+        else {
+            return;
+        };
+
+        let mut out_left = vec![0.0f32; MAX_BLOCK_SIZE];
+        let mut out_right = vec![0.0f32; MAX_BLOCK_SIZE];
+
+        let total = left.len().min(right.len());
+        let mut cursor = 0usize;
+        while cursor < total {
+            let frames = (total - cursor).min(MAX_BLOCK_SIZE);
+
+            if let Err(err) = plugin.process(
+                &[
+                    &left[cursor..cursor + frames],
+                    &right[cursor..cursor + frames],
+                ],
+                &mut [&mut out_left[..frames], &mut out_right[..frames]],
+                frames,
+            ) {
+                eprintln!("VST3 process failed ({}): {err}", descriptor.name);
+                break;
+            }
+
+            left[cursor..cursor + frames].copy_from_slice(&out_left[..frames]);
+            right[cursor..cursor + frames].copy_from_slice(&out_right[..frames]);
             cursor += frames;
         }
     }
@@ -341,5 +396,50 @@ pub fn apply_plugin_chain(
         }
 
         host.process_external_instance(samples, sample_rate, &instance, descriptor);
+    }
+}
+
+/// Apply a full plugin chain to a stereo pair. Builtins run dual-mono (the
+/// same processor independently per channel); external VST3 instances are
+/// fed the true left/right pair.
+pub fn apply_plugin_chain_stereo(
+    left: &mut [f32],
+    right: &mut [f32],
+    chain: &[PluginInstance],
+    sample_rate: u32,
+    registry: &[PluginDescriptor],
+) {
+    if chain.is_empty() || left.is_empty() {
+        return;
+    }
+
+    let mut ordered = chain.to_vec();
+    ordered.sort_by_key(|entry| entry.order);
+    let mut host = ExternalVstHost::new();
+
+    for instance in ordered {
+        if !instance.enabled || instance.bypassed {
+            continue;
+        }
+        let handled_left = apply_builtin_processor(left, &instance, sample_rate);
+        if handled_left {
+            apply_builtin_processor(right, &instance, sample_rate);
+            continue;
+        }
+
+        let Some(descriptor) = registry
+            .iter()
+            .find(|descriptor| descriptor.id == instance.descriptor_id)
+        else {
+            continue;
+        };
+        if !descriptor.format.eq_ignore_ascii_case("vst3") {
+            continue;
+        }
+        if !descriptor.factory_symbol_found {
+            continue;
+        }
+
+        host.process_external_instance_stereo(left, right, sample_rate, &instance, descriptor);
     }
 }

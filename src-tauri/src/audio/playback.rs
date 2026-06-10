@@ -213,11 +213,12 @@ impl PlaybackHandle {
                                     start_offset_secs,
                                 } => {
                                     let requested = (position_secs - *start_offset_secs).max(0.0);
-                                    let start_frame = (requested
-                                        * *sample_rate as f64
-                                        * (*channels).max(1) as f64)
-                                        .round()
-                                        as usize;
+                                    // Round to whole frames first so seeking into an
+                                    // interleaved stereo buffer never lands mid-frame
+                                    // (which would swap left/right).
+                                    let start_frame = (requested * *sample_rate as f64).round()
+                                        as usize
+                                        * (*channels).max(1) as usize;
                                     if let Some(sink) = start_samples(
                                         samples.as_slice(),
                                         *sample_rate,

@@ -1,7 +1,9 @@
 //! Offline rendering utilities used by freeze/render-in-place/stem export.
+//! The arrangement path renders interleaved stereo; mono sources are
+//! duplicated to both channels so mono compatibility is preserved.
 
 use super::engine::mixer::track_should_render;
-use super::vst_host::apply_plugin_chain;
+use super::vst_host::{apply_plugin_chain, apply_plugin_chain_stereo};
 use crate::models::{CompRegion, Project, TakeClip, Track};
 use hound::{SampleFormat, WavSpec, WavWriter};
 use std::collections::HashMap;
@@ -19,11 +21,20 @@ use symphonia::core::probe::Hint;
 pub struct RenderedTrack {
     pub track_id: String,
     pub name: String,
+    /// Interleaved samples (`channels` per frame).
     pub samples: Vec<f32>,
     pub sample_rate: u32,
+    pub channels: u16,
 }
 
-type DecodedAssetCache = HashMap<String, Vec<f32>>;
+/// Decoded stereo asset: left and right channel buffers of equal length.
+#[derive(Debug, Clone)]
+struct StereoSource {
+    left: Vec<f32>,
+    right: Vec<f32>,
+}
+
+type DecodedAssetCache = HashMap<String, StereoSource>;
 
 fn db_to_gain(db: f64) -> f32 {
     (10f64.powf(db / 20.0)) as f32
@@ -31,6 +42,17 @@ fn db_to_gain(db: f64) -> f32 {
 
 fn clip_sample(v: f32) -> f32 {
     v.clamp(-1.0, 1.0)
+}
+
+/// Pan as a balance control: unity at center, attenuates the opposite
+/// channel toward the extremes, never boosts.
+fn pan_gains(pan: f64) -> (f32, f32) {
+    let pan = pan.clamp(-1.0, 1.0) as f32;
+    if pan >= 0.0 {
+        (1.0 - pan, 1.0)
+    } else {
+        (1.0, 1.0 + pan)
+    }
 }
 
 fn same_path(a: &Path, b: &Path) -> bool {
@@ -43,7 +65,10 @@ fn same_path(a: &Path, b: &Path) -> bool {
     }
 }
 
-fn decode_audio_mono(path: &Path) -> Result<(u32, Vec<f32>), String> {
+/// Decode an audio file preserving stereo. Mono sources are duplicated to
+/// both channels; sources with more than two channels are downmixed to a
+/// stereo pair from the first two channels.
+fn decode_audio_stereo(path: &Path) -> Result<(u32, StereoSource), String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let probe = symphonia::default::get_probe();
@@ -79,7 +104,8 @@ fn decode_audio_mono(path: &Path) -> Result<(u32, Vec<f32>), String> {
         .map_err(|e| e.to_string())?;
 
     let track_id = track.id;
-    let mut mono = Vec::<f32>::new();
+    let mut left = Vec::<f32>::new();
+    let mut right = Vec::<f32>::new();
 
     while let Ok(packet) = format_reader.next_packet() {
         if packet.track_id() != track_id {
@@ -94,11 +120,24 @@ fn decode_audio_mono(path: &Path) -> Result<(u32, Vec<f32>), String> {
         buf.copy_interleaved_ref(decoded);
         let interleaved = buf.samples();
         for frame in interleaved.chunks(channels) {
-            let sum: f32 = frame.iter().copied().sum();
-            mono.push(sum / channels as f32);
+            let l = frame[0];
+            let r = if channels >= 2 { frame[1] } else { frame[0] };
+            left.push(l);
+            right.push(r);
         }
     }
 
+    Ok((sr, StereoSource { left, right }))
+}
+
+fn decode_audio_mono(path: &Path) -> Result<(u32, Vec<f32>), String> {
+    let (sr, stereo) = decode_audio_stereo(path)?;
+    let mono = stereo
+        .left
+        .iter()
+        .zip(stereo.right.iter())
+        .map(|(l, r)| (l + r) * 0.5)
+        .collect();
     Ok((sr, mono))
 }
 
@@ -118,6 +157,13 @@ fn resample_linear(input: &[f32], src_sr: u32, dst_sr: u32) -> Vec<f32> {
         out.push(s);
     }
     out
+}
+
+fn resample_stereo(source: &StereoSource, src_sr: u32, dst_sr: u32) -> StereoSource {
+    StereoSource {
+        left: resample_linear(&source.left, src_sr, dst_sr),
+        right: resample_linear(&source.right, src_sr, dst_sr),
+    }
 }
 
 fn mix_audio_segment(
@@ -149,6 +195,33 @@ fn mix_audio_segment(
         }
         dest[di] += *sample;
     }
+}
+
+fn mix_stereo_segment(
+    left: &mut [f32],
+    right: &mut [f32],
+    clip_start_secs: f64,
+    source_offset_secs: f64,
+    duration_secs: f64,
+    source: &StereoSource,
+    sample_rate: u32,
+) {
+    mix_audio_segment(
+        left,
+        clip_start_secs,
+        source_offset_secs,
+        duration_secs,
+        &source.left,
+        sample_rate,
+    );
+    mix_audio_segment(
+        right,
+        clip_start_secs,
+        source_offset_secs,
+        duration_secs,
+        &source.right,
+        sample_rate,
+    );
 }
 
 fn synth_midi_clip(
@@ -214,13 +287,13 @@ fn decode_asset_cached(
     media_asset_id: &str,
     sample_rate: u32,
     cache: &mut DecodedAssetCache,
-) -> Option<Vec<f32>> {
+) -> Option<StereoSource> {
     if let Some(cached) = cache.get(media_asset_id) {
         return Some(cached.clone());
     }
     let asset = project.media.iter().find(|m| m.id == media_asset_id)?;
-    let (src_sr, raw) = decode_audio_mono(Path::new(&asset.path)).ok()?;
-    let source = resample_linear(&raw, src_sr, sample_rate);
+    let (src_sr, raw) = decode_audio_stereo(Path::new(&asset.path)).ok()?;
+    let source = resample_stereo(&raw, src_sr, sample_rate);
     cache.insert(media_asset_id.to_string(), source.clone());
     Some(source)
 }
@@ -228,7 +301,8 @@ fn decode_asset_cached(
 fn render_comp_regions_with_cache(
     project: &Project,
     track: &Track,
-    buffer: &mut [f32],
+    left: &mut [f32],
+    right: &mut [f32],
     sample_rate: u32,
     cache: &mut DecodedAssetCache,
 ) {
@@ -243,8 +317,9 @@ fn render_comp_regions_with_cache(
         let source_offset =
             clip.source_offset_secs + (region.start_secs - clip.start_secs).max(0.0);
         let dur = (region.end_secs - region.start_secs).max(0.0);
-        mix_audio_segment(
-            buffer,
+        mix_stereo_segment(
+            left,
+            right,
             region.start_secs,
             source_offset,
             dur,
@@ -254,34 +329,47 @@ fn render_comp_regions_with_cache(
     }
 }
 
+fn interleave(left: &[f32], right: &[f32]) -> Vec<f32> {
+    let mut out = Vec::with_capacity(left.len() * 2);
+    for (l, r) in left.iter().zip(right.iter()) {
+        out.push(*l);
+        out.push(*r);
+    }
+    out
+}
+
+/// Render a track into interleaved stereo at the project sample rate.
 fn render_arrangement_track(
     project: &Project,
     track: &Track,
     sample_rate: u32,
-    total_samples: usize,
+    total_frames: usize,
     cache: &mut DecodedAssetCache,
 ) -> Vec<f32> {
-    let mut buffer = vec![0.0f32; total_samples];
+    let mut left = vec![0.0f32; total_frames];
+    let mut right = vec![0.0f32; total_frames];
 
     if track.freeze_state.is_frozen {
         if let Some(path) = &track.freeze_state.frozen_path {
-            if let Ok((src_sr, raw)) = decode_audio_mono(Path::new(path)) {
-                let source = resample_linear(&raw, src_sr, sample_rate);
-                mix_audio_segment(
-                    &mut buffer,
+            if let Ok((src_sr, raw)) = decode_audio_stereo(Path::new(path)) {
+                let source = resample_stereo(&raw, src_sr, sample_rate);
+                let duration = source.left.len() as f64 / sample_rate as f64;
+                mix_stereo_segment(
+                    &mut left,
+                    &mut right,
                     0.0,
                     0.0,
-                    source.len() as f64 / sample_rate as f64,
+                    duration,
                     &source,
                     sample_rate,
                 );
-                return buffer;
+                return interleave(&left, &right);
             }
         }
     }
 
     if !track.comp_regions.is_empty() {
-        render_comp_regions_with_cache(project, track, &mut buffer, sample_rate, cache);
+        render_comp_regions_with_cache(project, track, &mut left, &mut right, sample_rate, cache);
     } else {
         for clip in &track.clips {
             let Some(source) =
@@ -289,8 +377,9 @@ fn render_arrangement_track(
             else {
                 continue;
             };
-            mix_audio_segment(
-                &mut buffer,
+            mix_stereo_segment(
+                &mut left,
+                &mut right,
                 clip.start_secs,
                 clip.source_offset_secs,
                 clip.duration_secs,
@@ -300,45 +389,72 @@ fn render_arrangement_track(
         }
     }
 
-    for midi in &track.midi_clips {
-        synth_midi_clip(&mut buffer, midi, project.bpm, sample_rate);
+    if !track.midi_clips.is_empty() {
+        let mut midi = vec![0.0f32; total_frames];
+        for clip in &track.midi_clips {
+            synth_midi_clip(&mut midi, clip, project.bpm, sample_rate);
+        }
+        for (i, sample) in midi.iter().enumerate() {
+            left[i] += *sample;
+            right[i] += *sample;
+        }
     }
 
-    apply_plugin_chain(
-        &mut buffer,
+    apply_plugin_chain_stereo(
+        &mut left,
+        &mut right,
         &track.plugin_chain.instances,
         sample_rate,
         &project.plugin_registry,
     );
+
     if track.muted {
-        buffer.fill(0.0);
+        left.fill(0.0);
+        right.fill(0.0);
     } else {
         let g = db_to_gain(track.volume_db);
-        for sample in buffer.iter_mut() {
-            *sample *= g;
+        let (pan_l, pan_r) = pan_gains(track.pan);
+        for sample in left.iter_mut() {
+            *sample = clip_sample(*sample * g * pan_l);
+        }
+        for sample in right.iter_mut() {
+            *sample = clip_sample(*sample * g * pan_r);
         }
     }
-    for sample in buffer.iter_mut() {
-        *sample = clip_sample(*sample);
-    }
-    buffer
+
+    interleave(&left, &right)
 }
 
-fn apply_sidechain_ducking(source: &[f32], target: &mut [f32], amount: f64, sample_rate: u32) {
+/// Sidechain ducking over interleaved stereo buffers. The envelope follows
+/// the mean absolute value of each source frame; the gain applies to every
+/// channel of the target frame so the stereo image is preserved.
+fn apply_sidechain_ducking(
+    source: &[f32],
+    target: &mut [f32],
+    channels: usize,
+    amount: f64,
+    sample_rate: u32,
+) {
     let duck = amount.clamp(0.0, 1.0) as f32;
-    if duck <= 0.0 {
+    if duck <= 0.0 || channels == 0 {
         return;
     }
     let attack_coeff = (-1.0f32 / (0.01 * sample_rate as f32)).exp();
     let release_coeff = (-1.0f32 / (0.2 * sample_rate as f32)).exp();
     let mut env = 0.0f32;
-    let len = source.len().min(target.len());
-    for i in 0..len {
-        let x = source[i].abs();
+    let frames = (source.len() / channels).min(target.len() / channels);
+    for frame in 0..frames {
+        let mut x = 0.0f32;
+        for ch in 0..channels {
+            x += source[frame * channels + ch].abs();
+        }
+        x /= channels as f32;
         let coeff = if x > env { attack_coeff } else { release_coeff };
         env = x + coeff * (env - x);
         let gain = (1.0 - duck * env.clamp(0.0, 1.0)).clamp(0.0, 1.0);
-        target[i] *= gain;
+        for ch in 0..channels {
+            target[frame * channels + ch] *= gain;
+        }
     }
 }
 
@@ -399,7 +515,7 @@ pub fn render_project_tracks(
 ) -> Result<Vec<RenderedTrack>, String> {
     let sample_rate = project.sample_rate.max(8000);
     let duration = clip_duration_secs(project);
-    let total_samples = (duration * sample_rate as f64).ceil() as usize;
+    let total_frames = (duration * sample_rate as f64).ceil() as usize;
     let mut cache = HashMap::new();
     let mut rendered: Vec<RenderedTrack> = project
         .tracks
@@ -407,14 +523,9 @@ pub fn render_project_tracks(
         .map(|track| RenderedTrack {
             track_id: track.id.clone(),
             name: track.name.clone(),
-            samples: render_arrangement_track(
-                project,
-                track,
-                sample_rate,
-                total_samples,
-                &mut cache,
-            ),
+            samples: render_arrangement_track(project, track, sample_rate, total_frames, &mut cache),
             sample_rate,
+            channels: 2,
         })
         .collect();
 
@@ -457,12 +568,12 @@ pub fn render_project_tracks(
             let (left, right) = rendered.split_at_mut(target_idx);
             let source = &left[source_idx].samples;
             let target = &mut right[0].samples;
-            apply_sidechain_ducking(source, target, route.amount, sample_rate);
+            apply_sidechain_ducking(source, target, 2, route.amount, sample_rate);
         } else {
             let (left, right) = rendered.split_at_mut(source_idx);
             let target = &mut left[target_idx].samples;
             let source = &right[0].samples;
-            apply_sidechain_ducking(source, target, route.amount, sample_rate);
+            apply_sidechain_ducking(source, target, 2, route.amount, sample_rate);
         }
     }
 
@@ -495,7 +606,7 @@ pub fn render_project_tracks(
 pub fn render_project_track(project: &Project, track_id: &str) -> Result<RenderedTrack, String> {
     let sample_rate = project.sample_rate.max(8000);
     let duration = clip_duration_secs(project);
-    let total_samples = (duration * sample_rate as f64).ceil() as usize;
+    let total_frames = (duration * sample_rate as f64).ceil() as usize;
     let mut cache = HashMap::new();
 
     let track = project
@@ -506,8 +617,9 @@ pub fn render_project_track(project: &Project, track_id: &str) -> Result<Rendere
     let mut target = RenderedTrack {
         track_id: track.id.clone(),
         name: track.name.clone(),
-        samples: render_arrangement_track(project, track, sample_rate, total_samples, &mut cache),
+        samples: render_arrangement_track(project, track, sample_rate, total_frames, &mut cache),
         sample_rate,
+        channels: 2,
     };
 
     // Apply only sidechain routes that target this track, rendering only the
@@ -536,21 +648,27 @@ pub fn render_project_track(project: &Project, track_id: &str) -> Result<Rendere
             project,
             source_track,
             sample_rate,
-            total_samples,
+            total_frames,
             &mut cache,
         );
-        apply_sidechain_ducking(&source, &mut target.samples, route.amount, sample_rate);
+        apply_sidechain_ducking(&source, &mut target.samples, 2, route.amount, sample_rate);
     }
 
     Ok(target)
 }
 
-pub fn write_wav_mono(path: &Path, sample_rate: u32, samples: &[f32]) -> Result<(), String> {
+/// Write interleaved float samples as a WAV with the given channel count.
+pub fn write_wav(
+    path: &Path,
+    sample_rate: u32,
+    channels: u16,
+    samples: &[f32],
+) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     let spec = WavSpec {
-        channels: 1,
+        channels: channels.max(1),
         sample_rate,
         bits_per_sample: 32,
         sample_format: SampleFormat::Float,
@@ -562,4 +680,8 @@ pub fn write_wav_mono(path: &Path, sample_rate: u32, samples: &[f32]) -> Result<
             .map_err(|e| e.to_string())?;
     }
     writer.finalize().map_err(|e| e.to_string())
+}
+
+pub fn write_wav_mono(path: &Path, sample_rate: u32, samples: &[f32]) -> Result<(), String> {
+    write_wav(path, sample_rate, 1, samples)
 }

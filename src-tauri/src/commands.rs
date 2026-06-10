@@ -4,7 +4,7 @@ use crate::assistant;
 use crate::audio::recording::RecordingHandle;
 use crate::audio::{
     compute_waveform_peaks, export_project_mixdown_to_wav, render_playback_preview,
-    render_project_track, render_project_tracks, write_wav_mono, PlaybackHandle,
+    render_project_track, render_project_tracks, write_wav, PlaybackHandle,
 };
 use crate::deck;
 use crate::models::{
@@ -50,6 +50,7 @@ pub struct MeterSource {
     pub master: Vec<f32>,
     pub master_start_secs: f64,
     pub sample_rate: u32,
+    pub channels: u16,
 }
 
 fn now_unix_ms() -> i64 {
@@ -964,6 +965,7 @@ pub fn playback_play_arrangement(
             master: playback.buffer.samples.clone(),
             master_start_secs: playback.buffer.timeline_start_secs,
             sample_rate: playback.buffer.sample_rate,
+            channels: playback.buffer.channels,
         });
     }
     state.playback.play_samples(
@@ -1009,6 +1011,7 @@ pub fn playback_meters(state: State<AppState>) -> Result<MeterReportPayload, Str
     let master_peak = crate::audio::engine::meters::peak_in_window(
         &source.master,
         source.sample_rate,
+        source.channels,
         position_secs - source.master_start_secs,
         METER_WINDOW_SECS,
     );
@@ -1020,6 +1023,7 @@ pub fn playback_meters(state: State<AppState>) -> Result<MeterReportPayload, Str
             peak: crate::audio::engine::meters::peak_in_window(
                 &track.samples,
                 track.sample_rate,
+                track.channels,
                 position_secs,
                 METER_WINDOW_SECS,
             ),
@@ -1633,9 +1637,10 @@ pub fn stem_export_start(
             sanitize_filename(&rendered_track.name)
         );
         let output_path = output_dir.join(file_name);
-        write_wav_mono(
+        write_wav(
             &output_path,
             rendered_track.sample_rate,
+            rendered_track.channels,
             &rendered_track.samples,
         )?;
         output_files.push(output_path.to_string_lossy().to_string());
@@ -1731,15 +1736,21 @@ pub fn track_freeze(
     let output_dir = validate_path_safe(&output_dir)?;
     std::fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
     let output_path = output_dir.join(format!("freeze_{}.wav", sanitize_filename(&track_id)));
-    write_wav_mono(&output_path, rendered.sample_rate, &rendered.samples)?;
+    write_wav(
+        &output_path,
+        rendered.sample_rate,
+        rendered.channels,
+        &rendered.samples,
+    )?;
 
+    let freeze_frames = rendered.samples.len() / rendered.channels.max(1) as usize;
     let freeze_asset = MediaAsset {
         id: Uuid::new_v4().to_string(),
         name: format!("Freeze {}", rendered.name),
         path: output_path.to_string_lossy().to_string(),
-        duration_secs: rendered.samples.len() as f64 / rendered.sample_rate as f64,
+        duration_secs: freeze_frames as f64 / rendered.sample_rate as f64,
         sample_rate: rendered.sample_rate,
-        channels: 1,
+        channels: rendered.channels,
     };
     project.media.push(freeze_asset.clone());
 
@@ -1796,13 +1807,14 @@ pub fn track_render_in_place(
     let mut project = state.project.lock().map_err(|_| "lock")?;
     let rendered = render_project_track(&project, track_id.as_str())?;
     let sample_rate = rendered.sample_rate;
-    let start_idx = (start_secs.max(0.0) * sample_rate as f64).round() as usize;
-    let end_idx = (end_secs.max(start_secs) * sample_rate as f64).round() as usize;
-    let end_idx = end_idx.min(rendered.samples.len());
-    if start_idx >= end_idx {
+    let channels = rendered.channels.max(1) as usize;
+    let total_frames = rendered.samples.len() / channels;
+    let start_frame = (start_secs.max(0.0) * sample_rate as f64).round() as usize;
+    let end_frame = ((end_secs.max(start_secs) * sample_rate as f64).round() as usize).min(total_frames);
+    if start_frame >= end_frame {
         return Err("Invalid render range".to_string());
     }
-    let slice = &rendered.samples[start_idx..end_idx];
+    let slice = &rendered.samples[start_frame * channels..end_frame * channels];
     let output_dir = PathBuf::from(output_dir);
     let output_dir = validate_path_safe(&output_dir)?;
     std::fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
@@ -1812,15 +1824,15 @@ pub fn track_render_in_place(
         (start_secs * 100.0).round() as i64,
         (end_secs * 100.0).round() as i64
     ));
-    write_wav_mono(&output_path, sample_rate, slice)?;
+    write_wav(&output_path, sample_rate, rendered.channels, slice)?;
 
     let asset = MediaAsset {
         id: Uuid::new_v4().to_string(),
         name: format!("Render {}", rendered.name),
         path: output_path.to_string_lossy().to_string(),
-        duration_secs: slice.len() as f64 / sample_rate as f64,
+        duration_secs: (slice.len() / channels) as f64 / sample_rate as f64,
         sample_rate,
-        channels: 1,
+        channels: rendered.channels,
     };
     project.media.push(asset.clone());
 

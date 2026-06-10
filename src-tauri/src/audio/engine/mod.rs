@@ -4,7 +4,7 @@ pub mod meters;
 pub mod mixer;
 pub mod render_shared;
 
-use super::render::{render_project_tracks, write_wav_mono, RenderedTrack};
+use super::render::{render_project_tracks, write_wav, RenderedTrack};
 use crate::models::Project;
 use std::path::Path;
 
@@ -13,6 +13,7 @@ pub use render_shared::ArrangementMixdownBuffer as ArrangementPlaybackBuffer;
 #[derive(Debug, Clone, PartialEq)]
 pub struct MixdownExportResult {
     pub sample_rate: u32,
+    pub channels: u16,
     pub samples_written: usize,
     pub duration_secs: f64,
 }
@@ -44,23 +45,6 @@ fn mix_rendered_tracks_audible(
     }
 
     Ok(mixdown)
-}
-
-pub fn mix_rendered_tracks_for_playback(
-    rendered_tracks: &[RenderedTrack],
-    sample_rate: u32,
-    start_secs: f64,
-) -> Result<ArrangementPlaybackBuffer, String> {
-    mix_rendered_tracks_audible(rendered_tracks, sample_rate, start_secs, None, 0.0)
-}
-
-pub fn mix_rendered_tracks_for_export(
-    rendered_tracks: &[RenderedTrack],
-    sample_rate: u32,
-    start_secs: f64,
-    end_secs: Option<f64>,
-) -> Result<ArrangementPlaybackBuffer, String> {
-    mix_rendered_tracks_audible(rendered_tracks, sample_rate, start_secs, end_secs, 0.0)
 }
 
 /// Master playback buffer plus the per-track buffers it was mixed from,
@@ -117,11 +101,18 @@ pub fn export_project_mixdown_to_wav(
     end_secs: Option<f64>,
 ) -> Result<MixdownExportResult, String> {
     let buffer = render_project_for_export(project, start_secs, end_secs)?;
-    write_wav_mono(output_path, buffer.sample_rate, &buffer.samples)?;
+    write_wav(
+        output_path,
+        buffer.sample_rate,
+        buffer.channels,
+        &buffer.samples,
+    )?;
+    let frames = buffer.samples.len() / buffer.channels.max(1) as usize;
     Ok(MixdownExportResult {
         sample_rate: buffer.sample_rate,
+        channels: buffer.channels,
         samples_written: buffer.samples.len(),
-        duration_secs: buffer.samples.len() as f64 / buffer.sample_rate.max(1) as f64,
+        duration_secs: frames as f64 / buffer.sample_rate.max(1) as f64,
     })
 }
 
@@ -165,6 +156,125 @@ mod tests {
             armed: false,
         });
         project
+    }
+
+    fn write_temp_wav_stereo(left: f32, right: f32, frames: usize, sample_rate: u32) -> String {
+        let path = std::env::temp_dir().join(format!(
+            "devodeck_stereo_test_{}_{}_{}.wav",
+            std::process::id(),
+            (left * 1000.0) as i32,
+            (right * 1000.0) as i32
+        ));
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut writer = hound::WavWriter::create(&path, spec).expect("writer");
+        for _ in 0..frames {
+            writer.write_sample(left).expect("L");
+            writer.write_sample(right).expect("R");
+        }
+        writer.finalize().expect("finalize");
+        path.to_string_lossy().to_string()
+    }
+
+    fn write_temp_wav_mono(value: f32, frames: usize, sample_rate: u32) -> String {
+        let path = std::env::temp_dir().join(format!(
+            "devodeck_mono_test_{}_{}.wav",
+            std::process::id(),
+            (value * 1000.0) as i32
+        ));
+        crate::audio::render::write_wav_mono(&path, sample_rate, &vec![value; frames])
+            .expect("mono wav");
+        path.to_string_lossy().to_string()
+    }
+
+    fn clip_project(asset_path: &str, duration_secs: f64, pan: f64) -> Project {
+        let mut project = Project::default();
+        project.sample_rate = 8000;
+        project.media.push(crate::models::MediaAsset {
+            id: "asset".to_string(),
+            name: "Asset".to_string(),
+            path: asset_path.to_string(),
+            duration_secs,
+            sample_rate: 8000,
+            channels: 2,
+        });
+        let mut track = {
+            let mut base = midi_test_project();
+            base.tracks.remove(0)
+        };
+        track.track_type = TrackType::Audio;
+        track.midi_clips.clear();
+        track.pan = pan;
+        track.clips.push(crate::models::TimelineClip {
+            id: "clip".to_string(),
+            media_asset_id: "asset".to_string(),
+            start_secs: 0.0,
+            source_offset_secs: 0.0,
+            duration_secs,
+            warp: None,
+            slice_markers: vec![],
+        });
+        project.tracks.push(track);
+        project
+    }
+
+    #[test]
+    fn stereo_clip_preserves_left_right_in_live_and_export() {
+        let wav = write_temp_wav_stereo(0.8, -0.2, 4000, 8000);
+        let project = clip_project(&wav, 0.5, 0.0);
+
+        let live =
+            super::render_project_for_realtime_playback(&project, 0.0).expect("live buffer");
+        let export = super::render_project_for_export(&project, 0.0, None).expect("export");
+        let _ = std::fs::remove_file(&wav);
+
+        assert_eq!(live.channels, 2);
+        assert_eq!(export.channels, 2);
+        assert_eq!(live.samples, export.samples);
+        // Probe a frame solidly inside the clip body.
+        let frame = 1000usize;
+        let left = live.samples[frame * 2];
+        let right = live.samples[frame * 2 + 1];
+        assert!((left - 0.8).abs() < 1e-3, "left was {left}");
+        assert!((right + 0.2).abs() < 1e-3, "right was {right}");
+    }
+
+    #[test]
+    fn mono_clip_renders_identically_to_both_channels() {
+        let wav = write_temp_wav_mono(0.4, 4000, 8000);
+        let project = clip_project(&wav, 0.5, 0.0);
+
+        let live = super::render_project_for_realtime_playback(&project, 0.0).expect("live");
+        let _ = std::fs::remove_file(&wav);
+
+        assert_eq!(live.channels, 2);
+        let frame = 1000usize;
+        let left = live.samples[frame * 2];
+        let right = live.samples[frame * 2 + 1];
+        assert!((left - right).abs() < 1e-6, "L {left} != R {right}");
+        assert!((left - 0.4).abs() < 1e-3, "left was {left}");
+    }
+
+    #[test]
+    fn pan_acts_as_balance_between_channels() {
+        let wav = write_temp_wav_stereo(0.5, 0.5, 4000, 8000);
+
+        let hard_right = clip_project(&wav, 0.5, 1.0);
+        let buffer = super::render_project_for_realtime_playback(&hard_right, 0.0).expect("right");
+        let frame = 1000usize;
+        assert!(buffer.samples[frame * 2].abs() < 1e-6, "left must be silent");
+        assert!((buffer.samples[frame * 2 + 1] - 0.5).abs() < 1e-3);
+
+        let hard_left = clip_project(&wav, 0.5, -1.0);
+        let buffer = super::render_project_for_realtime_playback(&hard_left, 0.0).expect("left");
+        assert!((buffer.samples[frame * 2] - 0.5).abs() < 1e-3);
+        assert!(buffer.samples[frame * 2 + 1].abs() < 1e-6, "right must be silent");
+
+        let _ = std::fs::remove_file(&wav);
     }
 
     #[test]
@@ -211,10 +321,11 @@ mod tests {
             name: "Track A".to_string(),
             samples: vec![0.1, 0.2, 0.3, 0.4],
             sample_rate: 4,
+            channels: 1,
         }];
 
         let export =
-            super::mix_rendered_tracks_for_export(&tracks, 4, 0.25, Some(0.75)).expect("range");
+            super::mix_rendered_tracks_audible(&tracks, 4, 0.25, Some(0.75), 0.0).expect("range");
 
         assert_eq!(export.timeline_start_secs, 0.25);
         assert_eq!(export.samples, vec![0.2, 0.3]);
@@ -227,9 +338,10 @@ mod tests {
             name: "Track A".to_string(),
             samples: vec![0.0, 0.0, 0.0, 0.0],
             sample_rate: 4,
+            channels: 1,
         }];
 
-        let err = super::mix_rendered_tracks_for_export(&tracks, 4, 0.0, None)
+        let err = super::mix_rendered_tracks_audible(&tracks, 4, 0.0, None, 0.0)
             .expect_err("silent export must fail");
 
         assert!(err.contains("no audible"), "unexpected error: {err}");
@@ -256,7 +368,7 @@ mod tests {
             .collect();
         let _ = std::fs::remove_file(&output_path);
 
-        assert_eq!(spec.channels, 1);
+        assert_eq!(spec.channels, live.channels);
         assert_eq!(spec.sample_rate, live.sample_rate);
         assert_eq!(result.sample_rate, live.sample_rate);
         assert_eq!(result.samples_written, live.samples.len());
@@ -272,17 +384,19 @@ mod tests {
                 name: "Track A".to_string(),
                 samples: vec![0.25, 0.25, 0.25, 0.25],
                 sample_rate: 2,
+            channels: 1,
             },
             RenderedTrack {
                 track_id: "track-b".to_string(),
                 name: "Track B".to_string(),
                 samples: vec![0.0, 0.5, 0.5, 0.5],
                 sample_rate: 2,
+            channels: 1,
             },
         ];
 
         let playback =
-            super::mix_rendered_tracks_for_playback(&tracks, 2, 0.5).expect("mixed buffer");
+            super::mix_rendered_tracks_audible(&tracks, 2, 0.5, None, 0.0).expect("mixed buffer");
 
         assert_eq!(playback.sample_rate, 2);
         assert_eq!(playback.channels, 1);
@@ -298,12 +412,14 @@ mod tests {
                 name: "Track A".to_string(),
                 samples: vec![0.2, 0.2, 0.2, 0.2],
                 sample_rate: 4,
+            channels: 1,
             },
             RenderedTrack {
                 track_id: "track-b".to_string(),
                 name: "Track B".to_string(),
                 samples: vec![0.0, 0.3, 0.3, 0.3],
                 sample_rate: 4,
+            channels: 1,
             },
         ];
 
