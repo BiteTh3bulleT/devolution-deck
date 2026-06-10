@@ -37,6 +37,7 @@ pub fn run() {
             commands::track_add,
             commands::clip_place,
             commands::playback_play,
+            commands::playback_play_arrangement,
             commands::playback_stop,
             commands::playback_position_ms,
             commands::playback_is_playing,

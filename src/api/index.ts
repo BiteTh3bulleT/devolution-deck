@@ -152,6 +152,10 @@ export async function playbackPlay(payload: {
   return invoke("playback_play", { payload });
 }
 
+export async function playbackPlayArrangement(startSecs = 0): Promise<void> {
+  return invoke("playback_play_arrangement", { startSecs });
+}
+
 export async function playbackStop(): Promise<void> {
   return invoke("playback_stop");
 }

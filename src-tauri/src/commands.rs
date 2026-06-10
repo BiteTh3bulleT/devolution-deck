@@ -3,8 +3,8 @@
 use crate::assistant;
 use crate::audio::recording::RecordingHandle;
 use crate::audio::{
-    compute_waveform_peaks, render_playback_preview, render_project_track, render_project_tracks,
-    write_wav_mono, PlaybackHandle,
+    compute_waveform_peaks, render_playback_preview, render_project_for_realtime_playback,
+    render_project_track, render_project_tracks, write_wav_mono, PlaybackHandle,
 };
 use crate::deck;
 use crate::models::{
@@ -934,6 +934,25 @@ pub fn playback_play(state: State<AppState>, payload: PlayClipPayload) -> Result
     state
         .playback
         .play(&path, payload.offset_secs, payload.duration_secs)
+}
+
+/// Play the full arrangement from a timeline position.
+#[tauri::command]
+pub fn playback_play_arrangement(
+    state: State<AppState>,
+    start_secs: Option<f64>,
+) -> Result<(), String> {
+    let start_secs = start_secs.unwrap_or(0.0).max(0.0);
+    let playback_buffer = {
+        let project = state.project.lock().map_err(|_| "lock")?;
+        render_project_for_realtime_playback(&project, start_secs)?
+    };
+    state.playback.play_samples(
+        playback_buffer.samples,
+        playback_buffer.sample_rate,
+        playback_buffer.channels,
+        playback_buffer.timeline_start_secs,
+    )
 }
 
 /// Stop playback.

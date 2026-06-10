@@ -11,7 +11,6 @@ import { Timeline } from "./components/Timeline";
 import { TransportBar } from "./components/TransportBar";
 import { UtilityPanel } from "./components/UtilityPanel";
 import { metronomeService } from "./services/metronome";
-import { midiSequencer } from "./services/midiSequencer";
 import { useArrangementStore } from "./stores/arrangementStore";
 import { useBrowserStore } from "./stores/browserStore";
 import { useLoopStore } from "./stores/loopStore";
@@ -200,43 +199,23 @@ export default function App() {
             if (transport.status === "playing") {
               await transport.stop();
               metronomeService.stop();
-              midiSequencer.stop();
               return;
             }
             const currentProject = useProjectStore.getState().project;
             if (!currentProject) return;
 
-            const clips = currentProject.tracks
-              .flatMap((track) => track.clips)
-              .sort((a, b) => a.start_secs - b.start_secs);
-            const firstClip = clips[0];
-            if (!firstClip) return;
-
-            const asset = currentProject.media.find((media) => media.id === firstClip.media_asset_id);
-            if (!asset) return;
-
-            await transport.play({
-              path: asset.path,
-              offset_secs: firstClip.source_offset_secs,
-              duration_secs: firstClip.duration_secs,
-            });
+            await transport.play(transport.positionSecs);
 
             if (useMetronomeStore.getState().enabled) {
               metronomeService.setEnabled(true);
               metronomeService.start(transport.positionSecs, currentProject.bpm);
             }
-
-            const midiClips = currentProject.tracks.flatMap((track) =>
-              track.midi_clips.map((clip) => ({ clip, trackStartSecs: clip.start_secs }))
-            );
-            midiSequencer.start(transport.positionSecs, currentProject.bpm, midiClips);
             return;
           }
 
           case "transport_stop": {
             await useTransportStore.getState().stop();
             metronomeService.stop();
-            midiSequencer.stop();
             return;
           }
 

@@ -23,3 +23,6 @@ Thumbs.db
 # Logs
 *.log
 npm-debug.log*
+
+# Local prompt/spec bundles
+DEVOLUTION_DECK_UPGRADE.zip

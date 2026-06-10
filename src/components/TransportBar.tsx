@@ -3,7 +3,6 @@ import { useTransportStore } from "../stores/transportStore";
 import { useLoopStore } from "../stores/loopStore";
 import { useMetronomeStore } from "../stores/metronomeStore";
 import { metronomeService } from "../services/metronome";
-import { midiSequencer } from "../services/midiSequencer";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { useEffect } from "react";
 import * as api from "../api";
@@ -161,35 +160,17 @@ export function TransportBar() {
   const handlePlay = async () => {
     if (!tauriRuntime) return;
     if (!project) return;
-    const allClips = project.tracks.flatMap((t) => t.clips);
-    const firstClip = [...allClips].sort((a, b) => a.start_secs - b.start_secs)[0];
-    if (firstClip) {
-      const asset = project.media.find((m) => m.id === firstClip.media_asset_id);
-      if (asset) {
-        await play({
-          path: asset.path,
-          offset_secs: firstClip.source_offset_secs,
-          duration_secs: firstClip.duration_secs,
-        });
-      }
-    }
+    await play(positionSecs);
     if (metronomeEnabled) {
       metronomeService.setEnabled(true);
       metronomeService.start(positionSecs, project?.bpm ?? 120);
     }
-
-    // Start MIDI sequencer with all MIDI clips from the project
-    const midiClips = (project?.tracks ?? []).flatMap((t) =>
-      t.midi_clips.map((clip) => ({ clip, trackStartSecs: clip.start_secs }))
-    );
-    midiSequencer.start(positionSecs, project?.bpm ?? 120, midiClips);
   };
 
   const handleStop = () => {
     if (!tauriRuntime) return;
     stop();
     metronomeService.stop();
-    midiSequencer.stop();
   };
 
   const handleLoopToggle = () => {

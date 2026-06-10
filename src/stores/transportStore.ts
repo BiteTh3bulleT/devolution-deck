@@ -20,7 +20,7 @@ interface TransportState {
 }
 
 interface TransportActions {
-  play: (payload: { path: string; offset_secs: number; duration_secs: number }) => Promise<void>;
+  play: (startSecs?: number) => Promise<void>;
   stop: () => Promise<void>;
   setPositionSecs: (secs: number) => void;
   startPositionPoll: () => void;
@@ -33,10 +33,11 @@ export const useTransportStore = create<TransportState & TransportActions>((set,
   _positionPollId: null,
   _loopSeeking: false,
 
-  async play(payload) {
+  async play(startSecs) {
     try {
-      await api.playbackPlay(payload);
-      set({ status: "playing" });
+      const timelineStart = startSecs ?? get().positionSecs;
+      await api.playbackPlayArrangement(timelineStart);
+      set({ positionSecs: timelineStart, status: "playing" });
       get().startPositionPoll();
     } catch (e) {
       console.error("Play failed", e);
