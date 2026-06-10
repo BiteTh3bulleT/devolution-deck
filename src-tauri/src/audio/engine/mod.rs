@@ -2,6 +2,7 @@
 
 pub mod automation;
 pub mod meters;
+pub mod midi_synth;
 pub mod mixer;
 pub mod render_shared;
 

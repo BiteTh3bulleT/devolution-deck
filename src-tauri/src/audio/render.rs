@@ -8,7 +8,6 @@ use super::vst_host::{apply_plugin_chain, apply_plugin_chain_stereo};
 use crate::models::{CompRegion, Project, TakeClip, Track};
 use hound::{SampleFormat, WavSpec, WavWriter};
 use std::collections::HashMap;
-use std::f32::consts::PI;
 use std::fs::File;
 use std::path::Path;
 use symphonia::core::audio::SampleBuffer;
@@ -225,38 +224,6 @@ fn mix_stereo_segment(
     );
 }
 
-fn synth_midi_clip(
-    track_buffer: &mut [f32],
-    clip: &crate::models::MidiClip,
-    bpm: f64,
-    sample_rate: u32,
-) {
-    let ticks_per_sec = (bpm / 60.0) * crate::models::TICKS_PER_BEAT as f64;
-    let clip_start_sample = (clip.start_secs * sample_rate as f64) as isize;
-
-    for note in &clip.notes {
-        let start_secs = note.start_ticks as f64 / ticks_per_sec;
-        let dur_secs = note.duration_ticks as f64 / ticks_per_sec;
-        let freq = 440.0f32 * (2.0f32).powf((note.pitch as f32 - 69.0) / 12.0);
-        let amp = (note.velocity as f32 / 127.0) * 0.18;
-        let note_start = clip_start_sample + (start_secs * sample_rate as f64) as isize;
-        let note_len = (dur_secs * sample_rate as f64) as usize;
-        for n in 0..note_len {
-            let di = note_start + n as isize;
-            if di < 0 {
-                continue;
-            }
-            let di = di as usize;
-            if di >= track_buffer.len() {
-                break;
-            }
-            let t = n as f32 / sample_rate as f32;
-            let envelope = if t < 0.005 { t / 0.005 } else { 1.0 };
-            track_buffer[di] += (2.0 * PI * freq * t).sin() * amp * envelope;
-        }
-    }
-}
-
 fn clip_duration_secs(project: &Project) -> f64 {
     let mut end = 30.0f64;
     for track in &project.tracks {
@@ -391,9 +358,21 @@ fn render_arrangement_track(
     }
 
     if !track.midi_clips.is_empty() {
+        let voice = super::engine::midi_synth::MidiVoice::from_plugin_type(
+            track
+                .instrument
+                .as_ref()
+                .map(|instrument| instrument.plugin_type.as_str()),
+        );
         let mut midi = vec![0.0f32; total_frames];
         for clip in &track.midi_clips {
-            synth_midi_clip(&mut midi, clip, project.bpm, sample_rate);
+            super::engine::midi_synth::synth_midi_clip(
+                &mut midi,
+                clip,
+                voice,
+                project.bpm,
+                sample_rate,
+            );
         }
         for (i, sample) in midi.iter().enumerate() {
             left[i] += *sample;
