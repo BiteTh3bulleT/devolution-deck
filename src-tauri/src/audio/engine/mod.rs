@@ -1,66 +1,30 @@
 //! Realtime arrangement engine primitives.
 
+pub mod render_shared;
+
 use super::render::{render_project_tracks, RenderedTrack};
 use crate::models::Project;
 
-#[derive(Debug, Clone)]
-pub struct ArrangementPlaybackBuffer {
-    pub samples: Vec<f32>,
-    pub sample_rate: u32,
-    pub channels: u16,
-    pub timeline_start_secs: f64,
-}
-
-fn clip_sample(value: f32) -> f32 {
-    value.clamp(-1.0, 1.0)
-}
+pub use render_shared::ArrangementMixdownBuffer as ArrangementPlaybackBuffer;
 
 pub fn mix_rendered_tracks_for_playback(
     rendered_tracks: &[RenderedTrack],
     sample_rate: u32,
     start_secs: f64,
 ) -> Result<ArrangementPlaybackBuffer, String> {
-    let sample_rate = sample_rate.max(1);
     let start_secs = start_secs.max(0.0);
-    let start_sample = (start_secs * sample_rate as f64).round() as usize;
-    let longest = rendered_tracks
+    let mixdown =
+        render_shared::mix_rendered_tracks(rendered_tracks, sample_rate, start_secs, None)?;
+
+    if mixdown
+        .samples
         .iter()
-        .map(|track| track.samples.len())
-        .max()
-        .unwrap_or(0);
-    if start_sample >= longest {
-        return Err("Playback start is beyond the end of the arrangement".to_string());
-    }
-
-    let mut samples = vec![0.0f32; longest - start_sample];
-    for track in rendered_tracks {
-        if track.sample_rate != sample_rate {
-            return Err(format!(
-                "Rendered track sample-rate mismatch: expected {sample_rate}, got {} for {}",
-                track.sample_rate, track.name
-            ));
-        }
-        for (target, sample) in samples
-            .iter_mut()
-            .zip(track.samples.iter().skip(start_sample))
-        {
-            *target += *sample;
-        }
-    }
-    for sample in &mut samples {
-        *sample = clip_sample(*sample);
-    }
-
-    if samples.iter().all(|sample| sample.abs() <= f32::EPSILON) {
+        .all(|sample| sample.abs() <= f32::EPSILON)
+    {
         return Err("Arrangement has no audible material from the requested position".to_string());
     }
 
-    Ok(ArrangementPlaybackBuffer {
-        samples,
-        sample_rate,
-        channels: 1,
-        timeline_start_secs: start_secs,
-    })
+    Ok(mixdown)
 }
 
 pub fn render_project_for_realtime_playback(
@@ -99,5 +63,31 @@ mod tests {
         assert_eq!(playback.channels, 1);
         assert_eq!(playback.timeline_start_secs, 0.5);
         assert_eq!(playback.samples, vec![0.75, 0.75, 0.75]);
+    }
+
+    #[test]
+    fn shared_mixdown_uses_same_sum_for_full_export_and_live_slice() {
+        let tracks = vec![
+            RenderedTrack {
+                track_id: "track-a".to_string(),
+                name: "Track A".to_string(),
+                samples: vec![0.2, 0.2, 0.2, 0.2],
+                sample_rate: 4,
+            },
+            RenderedTrack {
+                track_id: "track-b".to_string(),
+                name: "Track B".to_string(),
+                samples: vec![0.0, 0.3, 0.3, 0.3],
+                sample_rate: 4,
+            },
+        ];
+
+        let full =
+            super::render_shared::mix_rendered_tracks(&tracks, 4, 0.0, None).expect("full mixdown");
+        let live =
+            super::render_shared::mix_rendered_tracks(&tracks, 4, 0.25, None).expect("live slice");
+
+        assert_eq!(full.samples, vec![0.2, 0.5, 0.5, 0.5]);
+        assert_eq!(live.samples, full.samples[1..].to_vec());
     }
 }

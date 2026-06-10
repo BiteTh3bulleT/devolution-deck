@@ -11,6 +11,7 @@ The main desktop transport now renders the current project arrangement into a re
 - `src-tauri/src/audio/engine/` exists as the home for realtime arrangement engine primitives.
 - `render_project_for_realtime_playback(project, start_secs)` renders the full arrangement from a timeline position.
 - `mix_rendered_tracks_for_playback(...)` mixes rendered track buffers, clips samples, validates sample-rate consistency, and returns a mono playback buffer with a timeline clock start.
+- `engine::render_shared::mix_rendered_tracks(...)` is the shared range-aware mixdown helper for live playback slices and future full mix exports.
 - New Tauri command: `playback_play_arrangement(start_secs)`.
 - Frontend main transport calls arrangement playback from the current timeline position.
 - The old `playback_play(payload)` clip-preview path remains available separately.
@@ -33,6 +34,7 @@ The main desktop transport now renders the current project arrangement into a re
 
 ```bash
 cargo test --manifest-path src-tauri/Cargo.toml audio::engine::tests::mixes_all_rendered_tracks_from_requested_timeline_start
+cargo test --manifest-path src-tauri/Cargo.toml audio::engine::tests::shared_mixdown_uses_same_sum_for_full_export_and_live_slice
 cargo check --manifest-path src-tauri/Cargo.toml
 npm run build
 npm run lint
@@ -42,5 +44,6 @@ npm run lint
 
 - The first realtime engine buffer is rendered ahead of playback, not streamed sample-by-sample from a low-latency graph.
 - Output is still mono because the current shared render path decodes and mixes mono buffers.
+- A dedicated master export command is not wired yet; the shared helper exists so that command can use the same summing/range semantics as live playback.
 - Transport metering is not yet driven by the realtime engine.
 - Full automation, pan, stereo preservation, plugin safety, and deck graph integration remain later engine milestones.
