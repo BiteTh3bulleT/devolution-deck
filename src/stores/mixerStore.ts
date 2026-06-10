@@ -12,6 +12,7 @@ interface MixerStoreState {
   setTrackVolumeDb: (trackId: string, volumeDb: number) => Promise<void>;
   setTrackPan: (trackId: string, pan: number) => Promise<void>;
   toggleTrackMute: (trackId: string) => Promise<void>;
+  toggleTrackSolo: (trackId: string) => Promise<void>;
   addSendRoute: (fromTrackId: string, toReturnId: string) => Promise<void>;
   setSendAmount: (sendId: string, amount: number) => Promise<void>;
   toggleSendEnabled: (sendId: string) => Promise<void>;
@@ -116,6 +117,15 @@ export const useMixerStore = create<MixerStoreState>(() => ({
       ...project,
       tracks: project.tracks.map((track) =>
         track.id === trackId ? { ...track, muted: !track.muted } : track
+      ),
+    }));
+  },
+
+  toggleTrackSolo(trackId) {
+    return patchProject((project) => ({
+      ...project,
+      tracks: project.tracks.map((track) =>
+        track.id === trackId ? { ...track, solo: !track.solo } : track
       ),
     }));
   },

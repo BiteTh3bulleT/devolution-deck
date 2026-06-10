@@ -1,5 +1,6 @@
 //! Realtime arrangement engine primitives.
 
+pub mod mixer;
 pub mod render_shared;
 
 use super::render::{render_project_tracks, RenderedTrack};

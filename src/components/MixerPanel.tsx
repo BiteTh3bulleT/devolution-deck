@@ -15,6 +15,7 @@ export function MixerPanel() {
   const setTrackVolumeDb = useMixerStore((s) => s.setTrackVolumeDb);
   const setTrackPan = useMixerStore((s) => s.setTrackPan);
   const toggleTrackMute = useMixerStore((s) => s.toggleTrackMute);
+  const toggleTrackSolo = useMixerStore((s) => s.toggleTrackSolo);
   const addSendRoute = useMixerStore((s) => s.addSendRoute);
   const setSendAmount = useMixerStore((s) => s.setSendAmount);
   const toggleSendEnabled = useMixerStore((s) => s.toggleSendEnabled);
@@ -63,18 +64,32 @@ export function MixerPanel() {
                     Base {dbLabel(track.volume_db)} · Auto {dbLabel(autoVolume)}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void toggleTrackMute(track.id)}
-                  className={[
-                    "px-2 py-1 rounded text-[11px] border",
-                    track.muted
-                      ? "bg-red-500/20 border-red-400/40 text-red-200"
-                      : "bg-deck-muted border-deck-border text-deck-text-muted",
-                  ].join(" ")}
-                >
-                  M
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => void toggleTrackSolo(track.id)}
+                    className={[
+                      "px-2 py-1 rounded text-[11px] border",
+                      track.solo
+                        ? "bg-amber-400/20 border-amber-300/40 text-amber-100"
+                        : "bg-deck-muted border-deck-border text-deck-text-muted",
+                    ].join(" ")}
+                  >
+                    S
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void toggleTrackMute(track.id)}
+                    className={[
+                      "px-2 py-1 rounded text-[11px] border",
+                      track.muted
+                        ? "bg-red-500/20 border-red-400/40 text-red-200"
+                        : "bg-deck-muted border-deck-border text-deck-text-muted",
+                    ].join(" ")}
+                  >
+                    M
+                  </button>
+                </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-[10px]">

@@ -1,5 +1,6 @@
 //! Offline rendering utilities used by freeze/render-in-place/stem export.
 
+use super::engine::mixer::track_should_render;
 use super::vst_host::apply_plugin_chain;
 use crate::models::{CompRegion, Project, TakeClip, Track};
 use hound::{SampleFormat, WavSpec, WavWriter};
@@ -466,13 +467,23 @@ pub fn render_project_tracks(
     }
 
     if !include_muted {
-        let muted: HashMap<&str, bool> = project
+        let any_solo = project.tracks.iter().any(|track| track.solo);
+        let should_render: HashMap<&str, bool> = project
             .tracks
             .iter()
-            .map(|track| (track.id.as_str(), track.muted))
+            .map(|track| {
+                (
+                    track.id.as_str(),
+                    track_should_render(track.muted, track.solo, any_solo),
+                )
+            })
             .collect();
         for track in &mut rendered {
-            if muted.get(track.track_id.as_str()).copied().unwrap_or(false) {
+            if !should_render
+                .get(track.track_id.as_str())
+                .copied()
+                .unwrap_or(true)
+            {
                 track.samples.fill(0.0);
             }
         }
