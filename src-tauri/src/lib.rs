@@ -61,6 +61,7 @@ pub fn run() {
             commands::recording_is_active,
             // Phase 4
             commands::plugin_scan_default,
+            commands::plugin_preflight,
             commands::plugin_scan_paths,
             commands::track_plugin_insert,
             commands::track_plugin_remove,

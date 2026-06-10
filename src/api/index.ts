@@ -275,6 +275,16 @@ export async function pluginScanPaths(roots: string[]): Promise<PluginDescriptor
   return invoke<PluginDescriptor[]>("plugin_scan_paths", { roots });
 }
 
+export interface PluginPreflightResult {
+  descriptor_id: string;
+  ok: boolean;
+  message: string;
+}
+
+export async function pluginPreflight(descriptorId: string): Promise<PluginPreflightResult> {
+  return invoke<PluginPreflightResult>("plugin_preflight", { descriptorId });
+}
+
 export async function trackPluginInsert(trackId: string, descriptorId: string): Promise<Track> {
   return invoke<Track>("track_plugin_insert", { trackId, descriptorId });
 }

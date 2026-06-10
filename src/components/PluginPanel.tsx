@@ -14,6 +14,7 @@ export function PluginPanel() {
   const [fromTrackId, setFromTrackId] = useState<string>("");
   const [toTrackId, setToTrackId] = useState<string>("");
   const [sidechainAmount, setSidechainAmount] = useState<number>(0.5);
+  const [preflight, setPreflight] = useState<Record<string, api.PluginPreflightResult>>({});
 
   const tracks = project?.tracks ?? [];
   const selectedTrack = useMemo(() => tracks.find((track) => track.id === trackId), [tracks, trackId]);
@@ -252,21 +253,54 @@ export function PluginPanel() {
             <p className="text-[11px] uppercase tracking-wide text-deck-text-muted mb-1">Insert Plugin</p>
             <div className="max-h-36 overflow-auto space-y-1">
               {project.plugin_registry.map((descriptor) => (
-                <button
-                  key={descriptor.id}
-                  type="button"
-                  onClick={async () => {
-                    await api.trackPluginInsert(selectedTrack.id, descriptor.id);
-                    await load();
-                  }}
-                  className="w-full text-left px-2 py-1 rounded border border-deck-border hover:border-deck-cyan/40 text-[11px]"
-                  title={descriptor.binary_path}
-                >
-                  {descriptorLabel(descriptor)}
-                  {descriptor.format === "vst3" && !descriptor.factory_symbol_found && (
-                    <span className="ml-1 text-red-300">(invalid)</span>
-                  )}
-                </button>
+                <div key={descriptor.id} className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await api.trackPluginInsert(selectedTrack.id, descriptor.id);
+                      await load();
+                    }}
+                    className="flex-1 text-left px-2 py-1 rounded border border-deck-border hover:border-deck-cyan/40 text-[11px]"
+                    title={descriptor.binary_path}
+                  >
+                    {descriptorLabel(descriptor)}
+                    {descriptor.format === "vst3" && !descriptor.factory_symbol_found && (
+                      <span className="ml-1 text-red-300">(invalid)</span>
+                    )}
+                    {preflight[descriptor.id] && (
+                      <span
+                        className={
+                          preflight[descriptor.id].ok ? "ml-1 text-emerald-300" : "ml-1 text-red-300"
+                        }
+                        title={preflight[descriptor.id].message}
+                      >
+                        {preflight[descriptor.id].ok ? "✓" : "✗"}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const result = await api.pluginPreflight(descriptor.id);
+                        setPreflight((prev) => ({ ...prev, [descriptor.id]: result }));
+                      } catch (e) {
+                        setPreflight((prev) => ({
+                          ...prev,
+                          [descriptor.id]: {
+                            descriptor_id: descriptor.id,
+                            ok: false,
+                            message: String(e),
+                          },
+                        }));
+                      }
+                    }}
+                    className="px-1.5 py-1 rounded border border-deck-border text-[10px] text-deck-text-muted hover:border-deck-cyan/40"
+                    title="Load-test this plugin"
+                  >
+                    Test
+                  </button>
+                </div>
               ))}
             </div>
           </div>

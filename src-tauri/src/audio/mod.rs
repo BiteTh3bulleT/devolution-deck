@@ -9,6 +9,7 @@ mod waveform;
 
 pub use engine::export_project_mixdown_to_wav;
 pub use playback::PlaybackHandle;
+pub use vst_host::preflight_plugin;
 pub use render::{
     render_playback_preview, render_project_track, render_project_tracks, write_wav,
     RenderedTrack,

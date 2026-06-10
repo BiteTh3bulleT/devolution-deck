@@ -1342,6 +1342,43 @@ pub fn recording_stop_to_timeline(
 // Phase 4: Plugin hosting / chains
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Serialize)]
+pub struct PluginPreflightPayload {
+    pub descriptor_id: String,
+    pub ok: bool,
+    pub message: String,
+}
+
+/// Actually load and initialize a plugin to verify it is hostable, instead
+/// of trusting scan metadata. Built-ins report as such; failures return the
+/// concrete reason.
+#[tauri::command]
+pub fn plugin_preflight(
+    state: State<AppState>,
+    descriptor_id: String,
+) -> Result<PluginPreflightPayload, String> {
+    let project = state.project.lock().map_err(|_| "lock")?;
+    let descriptor = project
+        .plugin_registry
+        .iter()
+        .find(|descriptor| descriptor.id == descriptor_id)
+        .ok_or("Plugin not found in registry")?;
+    let sample_rate = project.sample_rate.max(8000);
+    let result = crate::audio::preflight_plugin(descriptor, sample_rate);
+    Ok(match result {
+        Ok(message) => PluginPreflightPayload {
+            descriptor_id,
+            ok: true,
+            message,
+        },
+        Err(message) => PluginPreflightPayload {
+            descriptor_id,
+            ok: false,
+            message,
+        },
+    })
+}
+
 #[tauri::command]
 pub fn plugin_scan_default(state: State<AppState>) -> Result<Vec<PluginDescriptor>, String> {
     let roots = plugin_host::default_vst3_roots();

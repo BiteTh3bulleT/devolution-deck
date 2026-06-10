@@ -399,6 +399,55 @@ pub fn apply_plugin_chain(
     }
 }
 
+/// Attempt to actually load and initialize a plugin so failures surface
+/// before the user trusts it in a chain. Returns a human-readable success
+/// note or the failure reason.
+pub fn preflight_plugin(descriptor: &PluginDescriptor, sample_rate: u32) -> Result<String, String> {
+    if descriptor.format.eq_ignore_ascii_case("builtin") {
+        return match descriptor.id.as_str() {
+            "builtin://gain" | "builtin://lowpass" | "builtin://compressor" => {
+                Ok(format!("{} is a built-in processor", descriptor.name))
+            }
+            other => Err(format!("Unknown built-in plugin id: {other}")),
+        };
+    }
+    if !descriptor.format.eq_ignore_ascii_case("vst3") {
+        return Err(format!(
+            "Unsupported plugin format '{}' — only built-ins and VST3 are hosted",
+            descriptor.format
+        ));
+    }
+    if !Path::new(descriptor.binary_path.as_str()).exists() {
+        return Err(format!(
+            "Plugin binary not found at {}",
+            descriptor.binary_path
+        ));
+    }
+    if !descriptor.factory_symbol_found {
+        return Err(format!(
+            "{} does not expose GetPluginFactory; it cannot be hosted",
+            descriptor.name
+        ));
+    }
+
+    let mut host = ExternalVstHost::new();
+    let plugin_info = host
+        .find_plugin_info(descriptor)?
+        .ok_or_else(|| format!("{} was not found by the VST3 scanner", descriptor.name))?;
+    let scanner = host.scanner_mut()?;
+    let mut plugin = scanner
+        .load(&plugin_info)
+        .map_err(|e| format!("Load failed: {e}"))?;
+    plugin
+        .initialize(sample_rate as f64, MAX_BLOCK_SIZE)
+        .map_err(|e| format!("Initialize failed: {e}"))?;
+    Ok(format!(
+        "{} loaded and initialized at {sample_rate} Hz ({} parameters)",
+        descriptor.name,
+        plugin.parameter_count()
+    ))
+}
+
 /// Apply a full plugin chain to a stereo pair. Builtins run dual-mono (the
 /// same processor independently per channel); external VST3 instances are
 /// fed the true left/right pair.
@@ -441,5 +490,131 @@ pub fn apply_plugin_chain_stereo(
         }
 
         host.process_external_instance_stereo(left, right, sample_rate, &instance, descriptor);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{apply_plugin_chain, preflight_plugin};
+    use crate::models::{PluginDescriptor, PluginInstance, PluginParameterState};
+
+    fn instance(descriptor_id: &str, order: u32, params: &[(&str, f64)]) -> PluginInstance {
+        PluginInstance {
+            id: format!("{descriptor_id}-{order}"),
+            descriptor_id: descriptor_id.to_string(),
+            enabled: true,
+            bypassed: false,
+            order,
+            parameters: params
+                .iter()
+                .map(|(id, value)| PluginParameterState {
+                    id: id.to_string(),
+                    value: *value,
+                })
+                .collect(),
+            serialized_state_b64: None,
+        }
+    }
+
+    #[test]
+    fn builtin_gain_changes_level() {
+        let mut samples = vec![0.25f32; 64];
+        let chain = vec![instance("builtin://gain", 0, &[("gain_db", 6.020599913279624)])];
+        apply_plugin_chain(&mut samples, &chain, 48000, &[]);
+        assert!((samples[32] - 0.5).abs() < 1e-3, "got {}", samples[32]);
+    }
+
+    #[test]
+    fn bypassed_and_disabled_instances_do_not_process() {
+        let mut samples = vec![0.25f32; 16];
+        let mut bypassed = instance("builtin://gain", 0, &[("gain_db", 12.0)]);
+        bypassed.bypassed = true;
+        let mut disabled = instance("builtin://gain", 1, &[("gain_db", 12.0)]);
+        disabled.enabled = false;
+        apply_plugin_chain(&mut samples, &[bypassed, disabled], 48000, &[]);
+        assert!((samples[8] - 0.25).abs() < 1e-6);
+    }
+
+    #[test]
+    fn builtin_compressor_reduces_dynamics() {
+        // Loud step into the compressor: output dynamic range must shrink.
+        let mut samples: Vec<f32> = (0..48000)
+            .map(|i| if i < 24000 { 0.1 } else { 0.9 })
+            .collect();
+        let chain = vec![instance(
+            "builtin://compressor",
+            0,
+            &[("threshold_db", -18.0), ("ratio", 8.0)],
+        )];
+        let quiet_in = 0.1f32;
+        let loud_in = 0.9f32;
+        apply_plugin_chain(&mut samples, &chain, 48000, &[]);
+        let quiet_out = samples[20000];
+        let loud_out = samples[47000];
+        let in_ratio = loud_in / quiet_in;
+        let out_ratio = loud_out / quiet_out;
+        assert!(
+            out_ratio < in_ratio * 0.8,
+            "compressor did not reduce dynamics: in {in_ratio} out {out_ratio}"
+        );
+    }
+
+    #[test]
+    fn chain_order_changes_result() {
+        let signal: Vec<f32> = (0..4800)
+            .map(|i| if i % 480 < 10 { 0.9 } else { 0.05 })
+            .collect();
+
+        let mut comp_then_gain = signal.clone();
+        apply_plugin_chain(
+            &mut comp_then_gain,
+            &[
+                instance("builtin://compressor", 0, &[("threshold_db", -12.0)]),
+                instance("builtin://gain", 1, &[("gain_db", 6.0)]),
+            ],
+            48000,
+            &[],
+        );
+
+        let mut gain_then_comp = signal.clone();
+        apply_plugin_chain(
+            &mut gain_then_comp,
+            &[
+                instance("builtin://gain", 0, &[("gain_db", 6.0)]),
+                instance("builtin://compressor", 1, &[("threshold_db", -12.0)]),
+            ],
+            48000,
+            &[],
+        );
+
+        assert_ne!(comp_then_gain, gain_then_comp, "order must matter");
+    }
+
+    #[test]
+    fn preflight_accepts_builtins_and_rejects_missing_binaries() {
+        let builtin = PluginDescriptor {
+            id: "builtin://gain".to_string(),
+            name: "Gain".to_string(),
+            vendor: "DEVOLUTION".to_string(),
+            version: "1.0.0".to_string(),
+            format: "builtin".to_string(),
+            bundle_path: "builtin://gain".to_string(),
+            binary_path: "builtin://gain".to_string(),
+            factory_symbol_found: true,
+        };
+        assert!(preflight_plugin(&builtin, 48000).is_ok());
+
+        let missing = PluginDescriptor {
+            id: "vst3::/nonexistent/Fake.vst3".to_string(),
+            name: "Fake".to_string(),
+            vendor: "Nobody".to_string(),
+            version: "0.0.0".to_string(),
+            format: "vst3".to_string(),
+            bundle_path: "/nonexistent/Fake.vst3".to_string(),
+            binary_path: "/nonexistent/Fake.vst3/Contents/x86_64-linux/Fake.so".to_string(),
+            factory_symbol_found: false,
+        };
+        let err = preflight_plugin(&missing, 48000).expect_err("must fail");
+        assert!(!err.is_empty());
     }
 }
