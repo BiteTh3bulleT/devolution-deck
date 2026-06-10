@@ -99,24 +99,15 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
       set({ status: "idle", targetTrackId: null, _tmpPath: null });
       return;
     }
-    const { status, targetTrackId, recordStartSecs, latencyCompensationSecs } = get();
+    const { status, recordStartSecs, latencyCompensationSecs } = get();
     if (status !== "recording" && status !== "count_in") return;
     set({ status: "stopping" });
     try {
-      const wavPath = await api.recordingStop();
-      // Import as media asset and place on target track
-      const asset = await api.mediaImportAudio(wavPath);
-      const project = await api.projectGet();
-      const track = project.tracks.find((t) => t.id === targetTrackId);
-      if (track) {
-        await api.clipPlace({
-          media_asset_id: asset.id,
-          track_index: track.index,
-          start_secs: Math.max(0, recordStartSecs - latencyCompensationSecs),
-          source_offset_secs: 0,
-          duration_secs: asset.duration_secs,
-        });
-      }
+      // Backend stops capture and atomically places the recording on the
+      // armed audio track as media asset + timeline clip.
+      await api.recordingStopToTimeline(
+        Math.max(0, recordStartSecs - latencyCompensationSecs)
+      );
       await useProjectStore.getState().load();
     } catch (e) {
       // Attempt to clean up temp file on error

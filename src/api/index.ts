@@ -241,6 +241,20 @@ export async function recordingStart(
   });
 }
 
+export interface RecordingPlacement {
+  asset: MediaAsset;
+  clip: TimelineClip;
+  track_id: string;
+}
+
+export async function recordingStopToTimeline(startSecs: number): Promise<RecordingPlacement> {
+  return invoke<RecordingPlacement>("recording_stop_to_timeline", { startSecs });
+}
+
+export async function trackSetArmed(trackId: string, armed: boolean): Promise<Track> {
+  return invoke<Track>("track_set_armed", { trackId, armed });
+}
+
 export async function recordingStop(): Promise<string> {
   return invoke<string>("recording_stop");
 }

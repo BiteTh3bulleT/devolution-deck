@@ -56,6 +56,8 @@ pub fn run() {
             commands::recording_list_devices,
             commands::recording_start,
             commands::recording_stop,
+            commands::recording_stop_to_timeline,
+            commands::track_set_armed,
             commands::recording_is_active,
             // Phase 4
             commands::plugin_scan_default,

@@ -3,6 +3,7 @@
  * Shows idle/count_in/recording/stopping states.
  */
 
+import * as api from "../api";
 import { useRecordingStore } from "../stores/recordingStore";
 import { useTransportStore } from "../stores/transportStore";
 import { useProjectStore } from "../stores/projectStore";
@@ -22,13 +23,18 @@ export function RecordButton() {
       return;
     }
     if (status === "stopping") return;
-    // Target the first audio track
-    const audioTrack = project?.tracks.find((t) => t.track_type === "audio");
-    if (!audioTrack) {
+    // Record onto the armed audio track; arm the first audio track if none is armed.
+    const audioTracks = project?.tracks.filter((t) => t.track_type === "audio") ?? [];
+    const targetTrack = audioTracks.find((t) => t.armed) ?? audioTracks[0];
+    if (!targetTrack) {
       alert("Add an audio track first");
       return;
     }
-    await startRecording(audioTrack.id, positionSecs);
+    if (!targetTrack.armed) {
+      await api.trackSetArmed(targetTrack.id, true);
+      await useProjectStore.getState().load();
+    }
+    await startRecording(targetTrack.id, positionSecs);
   };
 
   const label =

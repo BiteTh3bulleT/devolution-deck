@@ -131,6 +131,175 @@ pub fn start_recording(
     })
 }
 
+/// Result of placing a finished recording onto the timeline.
+#[derive(Debug, Clone)]
+pub struct RecordingPlacement {
+    pub asset: crate::models::MediaAsset,
+    pub clip: crate::models::TimelineClip,
+    pub track_id: String,
+}
+
+/// Import a finished recording WAV into the project as a media asset and
+/// place it as a clip at `start_secs` on the first armed audio track.
+/// This is the DAW half of recording: capture alone is not enough.
+pub fn import_recording_to_timeline(
+    project: &mut crate::models::Project,
+    wav_path: &Path,
+    start_secs: f64,
+) -> Result<RecordingPlacement, String> {
+    let track_id = project
+        .tracks
+        .iter()
+        .find(|track| track.armed && track.track_type == crate::models::TrackType::Audio)
+        .map(|track| track.id.clone())
+        .ok_or("No armed audio track to receive the recording")?;
+
+    let reader = hound::WavReader::open(wav_path)
+        .map_err(|e| format!("Recorded WAV is unreadable: {e}"))?;
+    let spec = reader.spec();
+    let frames = reader.duration() as f64;
+    let duration_secs = frames / spec.sample_rate.max(1) as f64;
+    if duration_secs <= 0.0 {
+        return Err("Recorded WAV contains no audio".to_string());
+    }
+
+    let asset = crate::models::MediaAsset {
+        id: uuid::Uuid::new_v4().to_string(),
+        name: wav_path
+            .file_stem()
+            .map(|stem| stem.to_string_lossy().to_string())
+            .unwrap_or_else(|| "Recording".to_string()),
+        path: wav_path.to_string_lossy().to_string(),
+        duration_secs,
+        sample_rate: spec.sample_rate,
+        channels: spec.channels,
+    };
+    project.media.push(asset.clone());
+
+    let clip = crate::models::TimelineClip {
+        id: uuid::Uuid::new_v4().to_string(),
+        media_asset_id: asset.id.clone(),
+        start_secs: start_secs.max(0.0),
+        source_offset_secs: 0.0,
+        duration_secs,
+        warp: None,
+        slice_markers: vec![],
+    };
+    let track = project
+        .tracks
+        .iter_mut()
+        .find(|track| track.id == track_id)
+        .ok_or("Armed track disappeared during placement")?;
+    track.clips.push(clip.clone());
+
+    Ok(RecordingPlacement {
+        asset,
+        clip,
+        track_id,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::import_recording_to_timeline;
+    use crate::models::{Project, Track, TrackType};
+
+    fn audio_track(id: &str, armed: bool) -> Track {
+        Track {
+            id: id.to_string(),
+            name: id.to_string(),
+            index: 0,
+            track_type: TrackType::Audio,
+            clips: vec![],
+            midi_clips: vec![],
+            instrument: None,
+            volume_db: 0.0,
+            pan: 0.0,
+            muted: false,
+            solo: false,
+            group_track_id: None,
+            plugin_chain: Default::default(),
+            freeze_state: Default::default(),
+            take_lanes: vec![],
+            comp_regions: vec![],
+            armed,
+        }
+    }
+
+    fn temp_wav(samples: &[f32], sample_rate: u32) -> std::path::PathBuf {
+        let path = std::env::temp_dir().join(format!(
+            "devodeck_rec_test_{}_{}.wav",
+            std::process::id(),
+            samples.len()
+        ));
+        crate::audio::render::write_wav_mono(&path, sample_rate, samples).expect("test wav");
+        path
+    }
+
+    #[test]
+    fn places_recording_as_clip_on_armed_audio_track() {
+        let mut project = Project::default();
+        project.tracks.push(audio_track("unarmed", false));
+        project.tracks.push(audio_track("armed-target", true));
+        let wav = temp_wav(&vec![0.5f32; 8000], 8000);
+
+        let placement =
+            import_recording_to_timeline(&mut project, &wav, 8.0).expect("placement");
+        let _ = std::fs::remove_file(&wav);
+
+        assert_eq!(placement.track_id, "armed-target");
+        assert_eq!(project.media.len(), 1);
+        assert!((placement.asset.duration_secs - 1.0).abs() < 1e-6);
+        let track = &project.tracks[1];
+        assert_eq!(track.clips.len(), 1);
+        assert_eq!(track.clips[0].start_secs, 8.0);
+        assert!((track.clips[0].duration_secs - 1.0).abs() < 1e-6);
+        assert_eq!(track.clips[0].media_asset_id, placement.asset.id);
+        assert!(project.tracks[0].clips.is_empty());
+    }
+
+    #[test]
+    fn errors_when_no_armed_audio_track() {
+        let mut project = Project::default();
+        project.tracks.push(audio_track("unarmed", false));
+        let wav = temp_wav(&vec![0.5f32; 100], 8000);
+
+        let err = import_recording_to_timeline(&mut project, &wav, 0.0)
+            .expect_err("must require an armed track");
+        let _ = std::fs::remove_file(&wav);
+
+        assert!(err.contains("armed"), "unexpected error: {err}");
+        assert!(project.media.is_empty());
+    }
+
+    #[test]
+    fn errors_on_empty_recording() {
+        let mut project = Project::default();
+        project.tracks.push(audio_track("armed", true));
+        let path = std::env::temp_dir().join(format!(
+            "devodeck_rec_test_empty_{}.wav",
+            std::process::id()
+        ));
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 8000,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        hound::WavWriter::create(&path, spec)
+            .expect("writer")
+            .finalize()
+            .expect("finalize");
+
+        let err = import_recording_to_timeline(&mut project, &path, 0.0)
+            .expect_err("must reject empty recording");
+        let _ = std::fs::remove_file(&path);
+
+        assert!(err.contains("no audio"), "unexpected error: {err}");
+        assert!(project.media.is_empty());
+    }
+}
+
 /// Signal the recording thread to stop, join it, flush samples to WAV, return path.
 pub fn stop_recording(mut handle: RecordingHandle) -> Result<PathBuf, String> {
     // Signal thread to stop and wait for it.

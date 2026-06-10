@@ -1282,6 +1282,58 @@ pub fn recording_is_active(state: State<AppState>) -> Result<bool, String> {
     Ok(state.recording.lock().map_err(|_| "lock")?.is_some())
 }
 
+/// Arm or disarm a track for recording. Arming disarms all other tracks so
+/// the single capture stream has one unambiguous destination.
+#[tauri::command]
+pub fn track_set_armed(
+    state: State<AppState>,
+    track_id: String,
+    armed: bool,
+) -> Result<Track, String> {
+    let mut project = state.project.lock().map_err(|_| "lock")?;
+    if !project.tracks.iter().any(|track| track.id == track_id) {
+        return Err("Track not found".to_string());
+    }
+    for track in &mut project.tracks {
+        track.armed = armed && track.id == track_id;
+    }
+    project
+        .tracks
+        .iter()
+        .find(|track| track.id == track_id)
+        .cloned()
+        .ok_or_else(|| "Track not found".to_string())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RecordingPlacementPayload {
+    pub asset: MediaAsset,
+    pub clip: TimelineClip,
+    pub track_id: String,
+}
+
+/// Stop the active recording and atomically place it on the armed audio
+/// track at `start_secs`: WAV → media asset → timeline clip in one step.
+#[tauri::command]
+pub fn recording_stop_to_timeline(
+    state: State<AppState>,
+    start_secs: f64,
+) -> Result<RecordingPlacementPayload, String> {
+    let path = {
+        let mut guard = state.recording.lock().map_err(|_| "lock")?;
+        let handle = guard.take().ok_or("Not recording")?;
+        crate::audio::recording::stop_recording(handle)?
+    };
+    let mut project = state.project.lock().map_err(|_| "lock")?;
+    let placement =
+        crate::audio::recording::import_recording_to_timeline(&mut project, &path, start_secs)?;
+    Ok(RecordingPlacementPayload {
+        asset: placement.asset,
+        clip: placement.clip,
+        track_id: placement.track_id,
+    })
+}
+
 // ---------------------------------------------------------------------------
 // Phase 4: Plugin hosting / chains
 // ---------------------------------------------------------------------------
