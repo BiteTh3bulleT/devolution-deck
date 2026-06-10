@@ -2,6 +2,7 @@
 //! The arrangement path renders interleaved stereo; mono sources are
 //! duplicated to both channels so mono compatibility is preserved.
 
+use super::engine::automation::LaneSampler;
 use super::engine::mixer::track_should_render;
 use super::vst_host::{apply_plugin_chain, apply_plugin_chain_stereo};
 use crate::models::{CompRegion, Project, TakeClip, Track};
@@ -412,13 +413,42 @@ fn render_arrangement_track(
         left.fill(0.0);
         right.fill(0.0);
     } else {
-        let g = db_to_gain(track.volume_db);
-        let (pan_l, pan_r) = pan_gains(track.pan);
-        for sample in left.iter_mut() {
-            *sample = clip_sample(*sample * g * pan_l);
-        }
-        for sample in right.iter_mut() {
-            *sample = clip_sample(*sample * g * pan_r);
+        let mut volume_sampler = project
+            .automation_lanes
+            .iter()
+            .find(|lane| lane.track_id == track.id && lane.parameter == "volume_db")
+            .and_then(LaneSampler::new);
+        let mut pan_sampler = project
+            .automation_lanes
+            .iter()
+            .find(|lane| lane.track_id == track.id && lane.parameter == "pan")
+            .and_then(LaneSampler::new);
+
+        if volume_sampler.is_none() && pan_sampler.is_none() {
+            let g = db_to_gain(track.volume_db);
+            let (pan_l, pan_r) = pan_gains(track.pan);
+            for sample in left.iter_mut() {
+                *sample = clip_sample(*sample * g * pan_l);
+            }
+            for sample in right.iter_mut() {
+                *sample = clip_sample(*sample * g * pan_r);
+            }
+        } else {
+            for frame in 0..total_frames {
+                let t = frame as f64 / sample_rate as f64;
+                let volume_db = volume_sampler
+                    .as_mut()
+                    .map(|sampler| sampler.value_at(t))
+                    .unwrap_or(track.volume_db);
+                let pan = pan_sampler
+                    .as_mut()
+                    .map(|sampler| sampler.value_at(t))
+                    .unwrap_or(track.pan);
+                let g = db_to_gain(volume_db);
+                let (pan_l, pan_r) = pan_gains(pan);
+                left[frame] = clip_sample(left[frame] * g * pan_l);
+                right[frame] = clip_sample(right[frame] * g * pan_r);
+            }
         }
     }
 

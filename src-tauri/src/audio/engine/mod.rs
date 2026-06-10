@@ -1,5 +1,6 @@
 //! Realtime arrangement engine primitives.
 
+pub mod automation;
 pub mod meters;
 pub mod mixer;
 pub mod render_shared;
@@ -220,6 +221,54 @@ mod tests {
         });
         project.tracks.push(track);
         project
+    }
+
+    #[test]
+    fn volume_automation_shapes_live_and_export_identically() {
+        let wav = write_temp_wav_mono(0.5, 8000, 8000);
+        let mut project = clip_project(&wav, 1.0, 0.0);
+        let track_id = project.tracks[0].id.clone();
+        project
+            .automation_lanes
+            .push(crate::models::AutomationLane {
+                id: "vol-lane".to_string(),
+                track_id,
+                parameter: "volume_db".to_string(),
+                enabled: true,
+                points: vec![
+                    crate::models::AutomationPoint {
+                        id: "a".to_string(),
+                        time_secs: 0.0,
+                        value: 0.0,
+                        curve: 0.0,
+                    },
+                    crate::models::AutomationPoint {
+                        id: "b".to_string(),
+                        time_secs: 1.0,
+                        value: -60.0,
+                        curve: 0.0,
+                    },
+                ],
+            });
+
+        let live = super::render_project_for_realtime_playback(&project, 0.0).expect("live");
+        let export = super::render_project_for_export(&project, 0.0, None).expect("export");
+
+        assert_eq!(live.samples, export.samples);
+        // Fade: early frames near full level, late frames much quieter.
+        let early = live.samples[100 * 2].abs();
+        let late = live.samples[7900 * 2].abs();
+        assert!((early - 0.5).abs() < 0.05, "early was {early}");
+        assert!(late < 0.05, "late was {late}");
+        assert!(early > late * 5.0, "no fade: early {early} late {late}");
+
+        // Disabling the lane removes the fade.
+        project.automation_lanes[0].enabled = false;
+        let flat = super::render_project_for_realtime_playback(&project, 0.0).expect("flat");
+        let flat_late = flat.samples[7900 * 2].abs();
+        assert!((flat_late - 0.5).abs() < 0.05, "flat late was {flat_late}");
+
+        let _ = std::fs::remove_file(&wav);
     }
 
     #[test]

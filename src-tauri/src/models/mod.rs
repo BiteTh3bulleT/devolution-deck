@@ -8,7 +8,8 @@ mod transport;
 pub use midi::{MidiClip, TICKS_PER_BEAT};
 #[allow(unused_imports)]
 pub use project::{
-    AppMode, AssetClassification, AssistantPluginStep, AssistantPreset, BeatGrid, BlackoutState,
+    AppMode, AssetClassification, AssistantPluginStep, AssistantPreset, AutomationLane,
+    AutomationPoint, BeatGrid, BlackoutState,
     BrandingConfig, BrowserAssetIndexEntry, BrowserIndexState, BrowserTag, ChordSuggestion,
     CompRegion, CompatibilityReport, Crate, CrossfaderSide, CrossfaderState,
     CrossfaderTrackBinding, CuePoint, CueSequence, CueSequenceStep, CueTrigger,
