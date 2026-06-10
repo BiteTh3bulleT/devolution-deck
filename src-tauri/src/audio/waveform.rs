@@ -107,8 +107,8 @@ pub fn compute_waveform_peaks(path: &Path, num_buckets: usize) -> Result<Wavefor
             continue;
         }
         let slice = &all_samples[start..end];
-        let min = slice.iter().copied().fold(0.0f32, f32::min);
-        let max = slice.iter().copied().fold(0.0f32, f32::max);
+        let min = slice.iter().copied().fold(f32::INFINITY, f32::min);
+        let max = slice.iter().copied().fold(f32::NEG_INFINITY, f32::max);
         buckets.push(WaveformBucket { min, max });
     }
 

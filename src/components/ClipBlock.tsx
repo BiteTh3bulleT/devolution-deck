@@ -8,9 +8,18 @@ interface ClipBlockProps {
   asset: MediaAsset | null;
   pixelsPerSec: number;
   trackHeight: number;
+  selected?: boolean;
+  onSelect?: () => void;
 }
 
-export function ClipBlock({ clip, asset, pixelsPerSec, trackHeight }: ClipBlockProps) {
+export function ClipBlock({
+  clip,
+  asset,
+  pixelsPerSec,
+  trackHeight,
+  selected = false,
+  onSelect,
+}: ClipBlockProps) {
   const [peaks, setPeaks] = useState<{ min: number; max: number }[] | null>(null);
 
   const leftPx = clip.start_secs * pixelsPerSec;
@@ -26,12 +35,18 @@ export function ClipBlock({ clip, asset, pixelsPerSec, trackHeight }: ClipBlockP
 
   return (
     <div
-      className="absolute top-1 bottom-1 rounded overflow-hidden border border-deck-border bg-deck-panel hover:border-deck-accent/50 transition-colors"
+      className={[
+        "absolute top-1 bottom-1 rounded overflow-hidden border bg-deck-panel transition-colors cursor-pointer",
+        selected
+          ? "border-deck-cyan shadow-glow-cyan"
+          : "border-deck-border hover:border-deck-accent/50",
+      ].join(" ")}
       style={{
         left: leftPx,
         width: Math.max(20, widthPx),
         height: trackHeight - 8,
       }}
+      onClick={onSelect}
     >
       {peaks && peaks.length > 0 ? (
         <WaveformCanvas

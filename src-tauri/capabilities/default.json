@@ -7,14 +7,66 @@
     "core:default",
     "dialog:default",
     "fs:default",
-    "fs:allow-read-text-file",
-    "fs:allow-write-text-file",
-    "fs:allow-read-file",
-    "fs:allow-write-file",
+    {
+      "identifier": "fs:allow-read-text-file",
+      "allow": [
+        { "path": "$APPDATA/**" },
+        { "path": "$RESOURCE/**" },
+        { "path": "$HOME/Music/**" },
+        { "path": "$HOME/Documents/**" },
+        { "path": "$HOME/Downloads/**" },
+        { "path": "$TEMP/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-text-file",
+      "allow": [
+        { "path": "$APPDATA/**" },
+        { "path": "$HOME/Music/**" },
+        { "path": "$HOME/Documents/**" },
+        { "path": "$HOME/Downloads/**" },
+        { "path": "$TEMP/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-read-file",
+      "allow": [
+        { "path": "$APPDATA/**" },
+        { "path": "$RESOURCE/**" },
+        { "path": "$HOME/Music/**" },
+        { "path": "$HOME/Documents/**" },
+        { "path": "$HOME/Downloads/**" },
+        { "path": "$TEMP/**" }
+      ]
+    },
+    {
+      "identifier": "fs:allow-write-file",
+      "allow": [
+        { "path": "$APPDATA/**" },
+        { "path": "$HOME/Music/**" },
+        { "path": "$HOME/Documents/**" },
+        { "path": "$HOME/Downloads/**" },
+        { "path": "$TEMP/**" }
+      ]
+    },
     "fs:allow-exists",
-    "fs:allow-mkdir",
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [
+        { "path": "$APPDATA/**" },
+        { "path": "$HOME/Music/**" },
+        { "path": "$HOME/Documents/**" },
+        { "path": "$HOME/Downloads/**" },
+        { "path": "$TEMP/**" }
+      ]
+    },
     "fs:allow-copy-file",
     "fs:allow-rename",
-    "shell:allow-open"
+    {
+      "identifier": "fs:allow-remove",
+      "allow": [
+        { "path": "$TEMP/**" }
+      ]
+    }
   ]
 }

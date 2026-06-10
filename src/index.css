@@ -1,21 +1,23 @@
+@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Space+Grotesk:wght@400;500;600&display=swap");
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 :root {
-  --deck-bg: #0a0a0c;
-  --deck-surface: #121216;
-  --deck-panel: #16161c;
-  --deck-border: #1e1e26;
+  --deck-bg: #07090f;
+  --deck-surface: #101522;
+  --deck-panel: #131a2a;
+  --deck-border: #1f2a40;
   --deck-muted: #2a2a34;
   --deck-graphite: #3a3a46;
-  --deck-text: #e4e4ea;
-  --deck-text-muted: #9090a0;
-  --deck-accent: #7c3aed;
-  --deck-accent-dim: #5b21b6;
-  --deck-cyan: #22d3ee;
-  --deck-magenta: #e879f9;
-  --deck-amber: #fbbf24;
+  --deck-text: #e8edf8;
+  --deck-text-muted: #95a3bf;
+  --deck-accent: #ff6b1a;
+  --deck-accent-dim: #c75112;
+  --deck-cyan: #38d7ff;
+  --deck-magenta: #ff4fd8;
+  --deck-amber: #ffc247;
 }
 
 * {
@@ -29,9 +31,13 @@ html, body, #root {
 }
 
 body {
-  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-family: "Space Grotesk", "IBM Plex Sans", sans-serif;
   background: var(--deck-bg);
+  background-image:
+    radial-gradient(circle at 12% 0%, color-mix(in srgb, var(--deck-accent) 26%, transparent), transparent 42%),
+    radial-gradient(circle at 88% 0%, color-mix(in srgb, var(--deck-cyan) 20%, transparent), transparent 46%);
   color: var(--deck-text);
+  letter-spacing: 0.01em;
 }
 
 /* Scrollbars - minimal dark */

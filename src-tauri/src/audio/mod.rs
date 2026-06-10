@@ -1,9 +1,13 @@
-//! Audio engine abstraction: playback and waveform generation.
-//! Phase 1: basic file playback and peak data for waveforms.
-//! Designed for future: mixer, plugins, multi-track playback.
+//! Audio engine abstraction: playback, waveform generation, and recording.
 
 mod playback;
+pub mod recording;
+mod render;
+mod vst_host;
 mod waveform;
 
 pub use playback::PlaybackHandle;
+pub use render::{
+    render_playback_preview, render_project_track, render_project_tracks, write_wav_mono,
+};
 pub use waveform::compute_waveform_peaks;
