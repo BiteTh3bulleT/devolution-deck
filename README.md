@@ -9,10 +9,10 @@ DEVOLUTION//DECK is a Tauri 2 desktop app with a React/TypeScript frontend and a
 - Native desktop shell through Tauri 2.
 - Dark command-center UI with transport, sidebar, arrangement timeline, utility panels, deck/show modes, and status surfaces.
 - Project lifecycle for `.deck` JSON files with schema migration, compatibility checks, backups, recovery snapshots, and support bundle export.
-- Audio import, waveform peak generation, clip placement, playback preview, loop regions, recording, render-in-place, freeze, and stem export.
+- Audio import, waveform peak generation, clip placement, realtime arrangement playback, loop regions, recording, render-in-place, freeze, mixdown export, and stem export.
 - MIDI tracks, piano roll, drum sequencer, Web Audio MIDI playback, quantize tools, metronome, and basic instrument assignments.
 - Mixer, sends, return/bus routing, sidechain routes, automation lanes, comping, warp/slicing, sample tagging, and template application.
-- DJ deck mode with deck states, cues, crossfader, sampler pads, library crates, setlists, and live coordination panels.
+- DJ deck mode with real Deck A/B audio playback, cues, loops, crossfader, sampler pads, library crates, setlists, and live coordination panels.
 - Show-control foundation for OSC, MIDI, DMX/Art-Net, lighting cue bindings, scene triggers, visual sync, and performance macro workflows.
 - Assistant and ops panels for asset classification, release checks, error reports, diagnostics, onboarding, branding, shortcuts, and system health.
 
@@ -119,12 +119,12 @@ If your environment sets `CI=1` and Tauri treats it too strictly for a local des
 
 ## Known Limitations
 
-- Full arrangement playback is still preview-oriented; some transport paths play the selected/first audio clip rather than a complete multitrack engine timeline.
+- Deck playback currently renders finite buffers when deck state changes; long-running continuous deck streaming, independent pitch lock, and deck-specific meters are still evolving.
 - Plugin hosting is a foundation layer, not a production-grade VST/CLAP sandbox.
 - MIDI and metronome playback use Web Audio for audible feedback and are not a low-latency professional MIDI/audio engine yet.
 - Show-control integrations can dispatch OSC, MIDI, and Art-Net packets, but real venue/hardware validation is still required.
 - Media portability depends on stored paths; robust relink/package workflows are still evolving.
-- There are currently no substantive automated Rust unit tests beyond compile-time test targets.
+- Automated Rust tests now cover engine mixdown, mixer policy, meters, stereo rendering, automation, plugin preflight, MIDI synthesis, and deck mix behavior.
 
 ## License
 

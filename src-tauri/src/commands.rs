@@ -74,6 +74,38 @@ fn sanitize_filename(name: &str) -> String {
     out.trim_matches('_').to_string()
 }
 
+const DECK_PLAYBACK_RENDER_SECS: f64 = 180.0;
+
+fn apply_deck_playback(
+    state: &State<AppState>,
+    mix: Option<crate::audio::DeckMixBuffer>,
+) -> Result<(), String> {
+    if let Ok(mut meter_source) = state.meter_source.lock() {
+        *meter_source = None;
+    }
+
+    match mix {
+        Some(mix) => state.playback.play_samples(
+            mix.samples,
+            mix.sample_rate,
+            mix.channels,
+            mix.timeline_start_secs,
+        ),
+        None => {
+            state.playback.stop();
+            Ok(())
+        }
+    }
+}
+
+fn prepare_deck_playback(project: &Project) -> Result<Option<crate::audio::DeckMixBuffer>, String> {
+    if project.decks.iter().any(|deck| deck.playing) {
+        crate::audio::render_project_deck_mix(project, DECK_PLAYBACK_RENDER_SECS).map(Some)
+    } else {
+        Ok(None)
+    }
+}
+
 /// Validate that a path is within allowed directories (no path traversal).
 /// Canonicalizes the path and checks it falls under one of the allowed roots.
 fn validate_path_safe(path: &std::path::Path) -> Result<std::path::PathBuf, String> {
@@ -1847,7 +1879,8 @@ pub fn track_render_in_place(
     let channels = rendered.channels.max(1) as usize;
     let total_frames = rendered.samples.len() / channels;
     let start_frame = (start_secs.max(0.0) * sample_rate as f64).round() as usize;
-    let end_frame = ((end_secs.max(start_secs) * sample_rate as f64).round() as usize).min(total_frames);
+    let end_frame =
+        ((end_secs.max(start_secs) * sample_rate as f64).round() as usize).min(total_frames);
     if start_frame >= end_frame {
         return Err("Invalid render range".to_string());
     }
@@ -2619,46 +2652,56 @@ pub fn deck_set_playing(
     deck_id: String,
     playing: bool,
 ) -> Result<DeckState, String> {
-    let mut project = state.project.lock().map_err(|_| "lock")?;
-    let normalized = normalize_deck_id(&deck_id);
-    let loaded_ref = {
-        let deck_state = find_deck_mut(&mut project, &normalized)?;
-        deck_state.playing = playing;
-        deck_state.loaded_track.clone()
-    };
+    let (deck, mix) = {
+        let mut project = state.project.lock().map_err(|_| "lock")?;
+        let normalized = normalize_deck_id(&deck_id);
+        let loaded_ref = {
+            let deck_state = find_deck_mut(&mut project, &normalized)?;
+            if playing && deck_state.loaded_track.is_none() {
+                return Err(format!("Deck {normalized} has no loaded track"));
+            }
+            deck_state.playing = playing;
+            deck_state.loaded_track.clone()
+        };
 
-    if playing {
-        if let Some(reference) = loaded_ref {
-            if let Some(item) = project
-                .library_items
-                .iter_mut()
-                .find(|entry| entry.id == reference.library_item_id)
-            {
-                item.last_played_unix_ms = Some(now_unix_ms());
-                item.play_count = item.play_count.saturating_add(1);
+        if playing {
+            if let Some(reference) = loaded_ref {
+                if let Some(item) = project
+                    .library_items
+                    .iter_mut()
+                    .find(|entry| entry.id == reference.library_item_id)
+                {
+                    item.last_played_unix_ms = Some(now_unix_ms());
+                    item.play_count = item.play_count.saturating_add(1);
+                }
             }
         }
-    }
 
-    let event_name = if playing { "deck_start" } else { "deck_stop" };
-    let trigger_ids: Vec<String> = project
-        .deck_event_bindings
-        .iter()
-        .filter(|binding| {
-            binding.enabled
-                && binding.event.eq_ignore_ascii_case(event_name)
-                && binding
-                    .deck_id
-                    .as_ref()
-                    .is_none_or(|entry| entry.eq_ignore_ascii_case(normalized.as_str()))
-        })
-        .map(|binding| binding.show_trigger_id.clone())
-        .collect();
-    for trigger_id in trigger_ids {
-        let _ = execute_show_trigger(&mut project, &trigger_id);
-    }
+        let event_name = if playing { "deck_start" } else { "deck_stop" };
+        let trigger_ids: Vec<String> = project
+            .deck_event_bindings
+            .iter()
+            .filter(|binding| {
+                binding.enabled
+                    && binding.event.eq_ignore_ascii_case(event_name)
+                    && binding
+                        .deck_id
+                        .as_ref()
+                        .is_none_or(|entry| entry.eq_ignore_ascii_case(normalized.as_str()))
+            })
+            .map(|binding| binding.show_trigger_id.clone())
+            .collect();
+        for trigger_id in trigger_ids {
+            let _ = execute_show_trigger(&mut project, &trigger_id);
+        }
 
-    Ok(find_deck(&project, &normalized)?.clone())
+        let deck = find_deck(&project, &normalized)?.clone();
+        let mix = prepare_deck_playback(&project)?;
+        (deck, mix)
+    };
+
+    apply_deck_playback(&state, mix)?;
+    Ok(deck)
 }
 
 #[tauri::command]
@@ -2667,10 +2710,18 @@ pub fn deck_seek_position(
     deck_id: String,
     position_secs: f64,
 ) -> Result<DeckState, String> {
-    let mut project = state.project.lock().map_err(|_| "lock")?;
-    let deck_state = find_deck_mut(&mut project, &deck_id)?;
-    deck_state.position_secs = position_secs.max(0.0);
-    Ok(deck_state.clone())
+    let (deck, mix) = {
+        let mut project = state.project.lock().map_err(|_| "lock")?;
+        let deck_state = find_deck_mut(&mut project, &deck_id)?;
+        deck_state.position_secs = position_secs.max(0.0);
+        let deck = deck_state.clone();
+        let mix = prepare_deck_playback(&project)?;
+        (deck, mix)
+    };
+    if mix.is_some() {
+        apply_deck_playback(&state, mix)?;
+    }
+    Ok(deck)
 }
 
 #[tauri::command]
@@ -2679,13 +2730,21 @@ pub fn deck_turntable_nudge(
     deck_id: String,
     delta_beats: f64,
 ) -> Result<DeckState, String> {
-    let mut project = state.project.lock().map_err(|_| "lock")?;
-    let deck_state = find_deck_mut(&mut project, &deck_id)?;
-    let beat_secs = 60.0 / deck_state.tempo_bpm.max(1.0);
-    let delta_secs = delta_beats * beat_secs * deck_state.jog_sensitivity.clamp(0.1, 3.0);
-    deck_state.position_secs = (deck_state.position_secs + delta_secs).max(0.0);
-    deck_state.beat_phase = (deck_state.beat_phase + delta_beats).rem_euclid(1.0);
-    Ok(deck_state.clone())
+    let (deck, mix) = {
+        let mut project = state.project.lock().map_err(|_| "lock")?;
+        let deck_state = find_deck_mut(&mut project, &deck_id)?;
+        let beat_secs = 60.0 / deck_state.tempo_bpm.max(1.0);
+        let delta_secs = delta_beats * beat_secs * deck_state.jog_sensitivity.clamp(0.1, 3.0);
+        deck_state.position_secs = (deck_state.position_secs + delta_secs).max(0.0);
+        deck_state.beat_phase = (deck_state.beat_phase + delta_beats).rem_euclid(1.0);
+        let deck = deck_state.clone();
+        let mix = prepare_deck_playback(&project)?;
+        (deck, mix)
+    };
+    if mix.is_some() {
+        apply_deck_playback(&state, mix)?;
+    }
+    Ok(deck)
 }
 
 #[tauri::command]
@@ -2695,18 +2754,26 @@ pub fn deck_turntable_scratch(
     delta_secs: f64,
     friction: Option<f64>,
 ) -> Result<DeckState, String> {
-    let mut project = state.project.lock().map_err(|_| "lock")?;
-    let deck_state = find_deck_mut(&mut project, &deck_id)?;
-    if !deck_state.vinyl_mode {
-        return Err("Vinyl mode disabled for this deck".to_string());
+    let (deck, mix) = {
+        let mut project = state.project.lock().map_err(|_| "lock")?;
+        let deck_state = find_deck_mut(&mut project, &deck_id)?;
+        if !deck_state.vinyl_mode {
+            return Err("Vinyl mode disabled for this deck".to_string());
+        }
+        let friction = friction.unwrap_or(0.85).clamp(0.2, 0.99);
+        let adjusted =
+            delta_secs * (1.0 - friction + 0.15) * deck_state.jog_sensitivity.clamp(0.1, 3.0);
+        deck_state.position_secs = (deck_state.position_secs + adjusted).max(0.0);
+        let beat_secs = 60.0 / deck_state.tempo_bpm.max(1.0);
+        deck_state.beat_phase = (deck_state.beat_phase + adjusted / beat_secs).rem_euclid(1.0);
+        let deck = deck_state.clone();
+        let mix = prepare_deck_playback(&project)?;
+        (deck, mix)
+    };
+    if mix.is_some() {
+        apply_deck_playback(&state, mix)?;
     }
-    let friction = friction.unwrap_or(0.85).clamp(0.2, 0.99);
-    let adjusted =
-        delta_secs * (1.0 - friction + 0.15) * deck_state.jog_sensitivity.clamp(0.1, 3.0);
-    deck_state.position_secs = (deck_state.position_secs + adjusted).max(0.0);
-    let beat_secs = 60.0 / deck_state.tempo_bpm.max(1.0);
-    deck_state.beat_phase = (deck_state.beat_phase + adjusted / beat_secs).rem_euclid(1.0);
-    Ok(deck_state.clone())
+    Ok(deck)
 }
 
 #[tauri::command]
@@ -2772,37 +2839,45 @@ pub fn deck_hot_cue_trigger(
     deck_id: String,
     cue_id: String,
 ) -> Result<DeckState, String> {
-    let mut project = state.project.lock().map_err(|_| "lock")?;
-    let position = {
-        let deck_state = find_deck(&project, &deck_id)?;
-        let cue = deck_state
-            .hot_cues
+    let (deck, mix) = {
+        let mut project = state.project.lock().map_err(|_| "lock")?;
+        let position = {
+            let deck_state = find_deck(&project, &deck_id)?;
+            let cue = deck_state
+                .hot_cues
+                .iter()
+                .find(|entry| entry.id == cue_id)
+                .ok_or("Cue not found")?;
+            cue.position_secs
+        };
+        {
+            let deck_state = find_deck_mut(&mut project, &deck_id)?;
+            deck_state.position_secs = position.max(0.0);
+        }
+        let trigger_ids: Vec<String> = project
+            .deck_event_bindings
             .iter()
-            .find(|entry| entry.id == cue_id)
-            .ok_or("Cue not found")?;
-        cue.position_secs
+            .filter(|binding| {
+                binding.enabled
+                    && binding.event.eq_ignore_ascii_case("cue_trigger")
+                    && binding
+                        .deck_id
+                        .as_ref()
+                        .is_none_or(|entry| entry.eq_ignore_ascii_case(deck_id.as_str()))
+            })
+            .map(|binding| binding.show_trigger_id.clone())
+            .collect();
+        for trigger_id in trigger_ids {
+            let _ = execute_show_trigger(&mut project, &trigger_id);
+        }
+        let deck = find_deck(&project, &deck_id)?.clone();
+        let mix = prepare_deck_playback(&project)?;
+        (deck, mix)
     };
-    {
-        let deck_state = find_deck_mut(&mut project, &deck_id)?;
-        deck_state.position_secs = position.max(0.0);
+    if mix.is_some() {
+        apply_deck_playback(&state, mix)?;
     }
-    let trigger_ids: Vec<String> = project
-        .deck_event_bindings
-        .iter()
-        .filter(|binding| {
-            binding.enabled
-                && binding.event.eq_ignore_ascii_case("cue_trigger")
-                && binding
-                    .deck_id
-                    .as_ref()
-                    .is_none_or(|entry| entry.eq_ignore_ascii_case(deck_id.as_str()))
-        })
-        .map(|binding| binding.show_trigger_id.clone())
-        .collect();
-    for trigger_id in trigger_ids {
-        let _ = execute_show_trigger(&mut project, &trigger_id);
-    }
-    Ok(find_deck(&project, &deck_id)?.clone())
+    Ok(deck)
 }
 
 #[tauri::command]
@@ -2837,57 +2912,72 @@ pub fn deck_loop_set(
     end_secs: f64,
     quantize_beats: u32,
 ) -> Result<LoopState, String> {
-    let mut project = state.project.lock().map_err(|_| "lock")?;
-    let loop_state = LoopState {
-        enabled: true,
-        start_secs: start_secs.max(0.0),
-        end_secs: end_secs.max(start_secs + 0.05),
-        quantize_beats: quantize_beats.clamp(1, 16),
-    };
-    let loaded_reference = {
-        let deck_state = find_deck_mut(&mut project, &deck_id)?;
-        deck_state.loop_state = Some(loop_state.clone());
-        deck_state.loaded_track.clone()
-    };
-    if let Some(reference) = loaded_reference {
-        if let Some(item) = project
-            .library_items
-            .iter_mut()
-            .find(|entry| entry.id == reference.library_item_id)
-        {
-            if !item.saved_loops.iter().any(|entry| {
-                (entry.start_secs - loop_state.start_secs).abs() < 0.001
-                    && (entry.end_secs - loop_state.end_secs).abs() < 0.001
-            }) {
-                item.saved_loops.push(loop_state.clone());
+    let (loop_state, mix) = {
+        let mut project = state.project.lock().map_err(|_| "lock")?;
+        let loop_state = LoopState {
+            enabled: true,
+            start_secs: start_secs.max(0.0),
+            end_secs: end_secs.max(start_secs + 0.05),
+            quantize_beats: quantize_beats.clamp(1, 16),
+        };
+        let loaded_reference = {
+            let deck_state = find_deck_mut(&mut project, &deck_id)?;
+            deck_state.loop_state = Some(loop_state.clone());
+            deck_state.loaded_track.clone()
+        };
+        if let Some(reference) = loaded_reference {
+            if let Some(item) = project
+                .library_items
+                .iter_mut()
+                .find(|entry| entry.id == reference.library_item_id)
+            {
+                if !item.saved_loops.iter().any(|entry| {
+                    (entry.start_secs - loop_state.start_secs).abs() < 0.001
+                        && (entry.end_secs - loop_state.end_secs).abs() < 0.001
+                }) {
+                    item.saved_loops.push(loop_state.clone());
+                }
             }
         }
-    }
-    let trigger_ids: Vec<String> = project
-        .deck_event_bindings
-        .iter()
-        .filter(|binding| {
-            binding.enabled
-                && binding.event.eq_ignore_ascii_case("loop_on")
-                && binding
-                    .deck_id
-                    .as_ref()
-                    .is_none_or(|entry| entry.eq_ignore_ascii_case(deck_id.as_str()))
-        })
-        .map(|binding| binding.show_trigger_id.clone())
-        .collect();
-    for trigger_id in trigger_ids {
-        let _ = execute_show_trigger(&mut project, &trigger_id);
+        let trigger_ids: Vec<String> = project
+            .deck_event_bindings
+            .iter()
+            .filter(|binding| {
+                binding.enabled
+                    && binding.event.eq_ignore_ascii_case("loop_on")
+                    && binding
+                        .deck_id
+                        .as_ref()
+                        .is_none_or(|entry| entry.eq_ignore_ascii_case(deck_id.as_str()))
+            })
+            .map(|binding| binding.show_trigger_id.clone())
+            .collect();
+        for trigger_id in trigger_ids {
+            let _ = execute_show_trigger(&mut project, &trigger_id);
+        }
+        let mix = prepare_deck_playback(&project)?;
+        (loop_state, mix)
+    };
+    if mix.is_some() {
+        apply_deck_playback(&state, mix)?;
     }
     Ok(loop_state)
 }
 
 #[tauri::command]
 pub fn deck_loop_clear(state: State<AppState>, deck_id: String) -> Result<DeckState, String> {
-    let mut project = state.project.lock().map_err(|_| "lock")?;
-    let deck_state = find_deck_mut(&mut project, &deck_id)?;
-    deck_state.loop_state = None;
-    Ok(deck_state.clone())
+    let (deck, mix) = {
+        let mut project = state.project.lock().map_err(|_| "lock")?;
+        let deck_state = find_deck_mut(&mut project, &deck_id)?;
+        deck_state.loop_state = None;
+        let deck = deck_state.clone();
+        let mix = prepare_deck_playback(&project)?;
+        (deck, mix)
+    };
+    if mix.is_some() {
+        apply_deck_playback(&state, mix)?;
+    }
+    Ok(deck)
 }
 
 #[tauri::command]
@@ -2945,20 +3035,27 @@ pub fn crossfader_update(
     crossfader.deck_a_gain = gain_a;
     crossfader.deck_b_gain = gain_b;
 
-    let mut project = state.project.lock().map_err(|_| "lock")?;
-    project.performance_mode.crossfader = crossfader.position;
-    for binding in &crossfader.track_bindings {
-        if let Some(track) = project
-            .tracks
-            .iter_mut()
-            .find(|entry| entry.id == binding.track_id)
-        {
-            let g = deck::side_gain(&binding.side, gain_a, gain_b).max(0.0001);
-            track.volume_db = (20.0 * g.log10()).clamp(-60.0, 6.0);
+    let (updated, mix) = {
+        let mut project = state.project.lock().map_err(|_| "lock")?;
+        project.performance_mode.crossfader = crossfader.position;
+        for binding in &crossfader.track_bindings {
+            if let Some(track) = project
+                .tracks
+                .iter_mut()
+                .find(|entry| entry.id == binding.track_id)
+            {
+                let g = deck::side_gain(&binding.side, gain_a, gain_b).max(0.0001);
+                track.volume_db = (20.0 * g.log10()).clamp(-60.0, 6.0);
+            }
         }
+        project.crossfader = crossfader.clone();
+        let mix = prepare_deck_playback(&project)?;
+        (crossfader.clone(), mix)
+    };
+    if mix.is_some() {
+        apply_deck_playback(&state, mix)?;
     }
-    project.crossfader = crossfader.clone();
-    Ok(crossfader)
+    Ok(updated)
 }
 
 #[tauri::command]

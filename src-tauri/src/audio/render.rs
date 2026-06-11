@@ -29,9 +29,9 @@ pub struct RenderedTrack {
 
 /// Decoded stereo asset: left and right channel buffers of equal length.
 #[derive(Debug, Clone)]
-struct StereoSource {
-    left: Vec<f32>,
-    right: Vec<f32>,
+pub(crate) struct StereoSource {
+    pub(crate) left: Vec<f32>,
+    pub(crate) right: Vec<f32>,
 }
 
 type DecodedAssetCache = HashMap<String, StereoSource>;
@@ -68,7 +68,7 @@ fn same_path(a: &Path, b: &Path) -> bool {
 /// Decode an audio file preserving stereo. Mono sources are duplicated to
 /// both channels; sources with more than two channels are downmixed to a
 /// stereo pair from the first two channels.
-fn decode_audio_stereo(path: &Path) -> Result<(u32, StereoSource), String> {
+pub(crate) fn decode_audio_stereo(path: &Path) -> Result<(u32, StereoSource), String> {
     let file = File::open(path).map_err(|e| e.to_string())?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let probe = symphonia::default::get_probe();
@@ -159,7 +159,7 @@ fn resample_linear(input: &[f32], src_sr: u32, dst_sr: u32) -> Vec<f32> {
     out
 }
 
-fn resample_stereo(source: &StereoSource, src_sr: u32, dst_sr: u32) -> StereoSource {
+pub(crate) fn resample_stereo(source: &StereoSource, src_sr: u32, dst_sr: u32) -> StereoSource {
     StereoSource {
         left: resample_linear(&source.left, src_sr, dst_sr),
         right: resample_linear(&source.right, src_sr, dst_sr),
@@ -532,7 +532,13 @@ pub fn render_project_tracks(
         .map(|track| RenderedTrack {
             track_id: track.id.clone(),
             name: track.name.clone(),
-            samples: render_arrangement_track(project, track, sample_rate, total_frames, &mut cache),
+            samples: render_arrangement_track(
+                project,
+                track,
+                sample_rate,
+                total_frames,
+                &mut cache,
+            ),
             sample_rate,
             channels: 2,
         })
@@ -653,13 +659,8 @@ pub fn render_project_track(project: &Project, track_id: &str) -> Result<Rendere
         else {
             continue;
         };
-        let source = render_arrangement_track(
-            project,
-            source_track,
-            sample_rate,
-            total_frames,
-            &mut cache,
-        );
+        let source =
+            render_arrangement_track(project, source_track, sample_rate, total_frames, &mut cache);
         apply_sidechain_ducking(&source, &mut target.samples, 2, route.amount, sample_rate);
     }
 
