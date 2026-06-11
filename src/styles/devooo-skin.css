@@ -1,0 +1,170 @@
+.devooo-utility-tab {
+  min-height: 23px;
+  min-width: 70px;
+  border: 0;
+  border-radius: 0;
+  background-color: transparent;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  line-height: 1.1;
+}
+
+.devooo-utility-tab-active {
+  background-image: url("../assets/ui/devooo/inspector/utility_tab_button_active_blank.png");
+}
+
+.devooo-utility-tab-inactive {
+  background-image: url("../assets/ui/devooo/inspector/utility_tab_button_inactive_blank.png");
+}
+
+.devooo-utility-tab-hover,
+.devooo-utility-tab-inactive:hover {
+  background-image: url("../assets/ui/devooo/inspector/utility_tab_button_hover_blank.png");
+  color: var(--deck-cyan);
+}
+
+.devooo-inspector-shell {
+  position: relative;
+  border-radius: 18px;
+  overflow-y: auto;
+}
+
+.devooo-inspector-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.68)),
+    url("../assets/ui/devooo/inspector/inspector_tab_full_blank_shell_340x900.png");
+  background-position: top center;
+  background-repeat: repeat-y;
+  background-size: 100% auto;
+  opacity: 0.95;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.devooo-inspector-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.devooo-inspector-section-card,
+.devooo-inspector-stat-row,
+.devooo-instrument-card,
+.devooo-warp-card,
+.devooo-empty-state-card,
+.devooo-input-field,
+.devooo-dropdown-field,
+.devooo-button-small,
+.devooo-button-wide,
+.devooo-chip-active,
+.devooo-chip-inactive,
+.devooo-toggle-shell,
+.devooo-slider-vertical-slot,
+.devooo-slider-horizontal-slot {
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+.devooo-inspector-section-card {
+  min-height: 170px;
+  background-image: url("../assets/ui/devooo/inspector/inspector_section_card_blank.png");
+}
+
+.devooo-inspector-stat-row {
+  min-height: 42px;
+  background-image: url("../assets/ui/devooo/inspector/inspector_stat_row_blank.png");
+}
+
+.devooo-instrument-card {
+  min-height: 170px;
+  background-image: url("../assets/ui/devooo/inspector/instrument_assignment_card_blank.png");
+}
+
+.devooo-warp-card {
+  min-height: 160px;
+  background-image: url("../assets/ui/devooo/inspector/warp_slicing_card_blank.png");
+}
+
+.devooo-empty-state-card {
+  min-height: 120px;
+  background-image: url("../assets/ui/devooo/inspector/empty_state_card_blank.png");
+}
+
+.devooo-input-field,
+.devooo-inspector-skinned input[type="number"],
+.devooo-inspector-skinned input[type="text"] {
+  min-height: 32px;
+  border: 0;
+  background-color: transparent;
+  background-image: url("../assets/ui/devooo/controls/input_field_blank.png");
+  color: var(--deck-text);
+}
+
+.devooo-dropdown-field,
+.devooo-inspector-skinned select {
+  min-height: 32px;
+  border: 0;
+  background-color: transparent;
+  background-image: url("../assets/ui/devooo/controls/dropdown_field_blank.png");
+  color: var(--deck-text);
+}
+
+.devooo-button-small {
+  min-height: 30px;
+  border: 0;
+  background-color: transparent;
+  background-image: url("../assets/ui/devooo/controls/small_button_blank.png");
+}
+
+.devooo-button-wide,
+.devooo-inspector-skinned button {
+  min-height: 32px;
+  border: 0;
+  background-color: transparent;
+  background-image: url("../assets/ui/devooo/controls/wide_button_blank.png");
+}
+
+.devooo-button-wide:disabled,
+.devooo-button-small:disabled,
+.devooo-inspector-skinned button:disabled {
+  opacity: 0.5;
+}
+
+.devooo-chip-active {
+  min-height: 34px;
+  background-image: url("../assets/ui/devooo/controls/chip_active_blank.png");
+}
+
+.devooo-chip-inactive {
+  min-height: 34px;
+  background-image: url("../assets/ui/devooo/controls/chip_inactive_blank.png");
+}
+
+.devooo-toggle-shell,
+.devooo-inspector-skinned input[type="checkbox"] {
+  width: 55px;
+  min-height: 24px;
+  appearance: none;
+  background-image: url("../assets/ui/devooo/controls/toggle_shell_blank_no_switch.png");
+}
+
+.devooo-toggle-shell:checked,
+.devooo-inspector-skinned input[type="checkbox"]:checked {
+  background-image: url("../assets/ui/devooo/controls/toggle_shell_blank.png");
+}
+
+.devooo-slider-horizontal-slot,
+.devooo-inspector-skinned input[type="range"] {
+  min-height: 26px;
+  appearance: none;
+  background-color: transparent;
+  background-image: url("../assets/ui/devooo/controls/horizontal_slider_slot_blank_no_switch.png");
+}
+
+.devooo-slider-vertical-slot {
+  min-width: 42px;
+  background-image: url("../assets/ui/devooo/controls/vertical_slider_slot_blank_no_switch.png");
+}

@@ -94,42 +94,44 @@ export function UtilityPanel() {
           <>
             {project ? (
               <>
-                <dl className="space-y-1.5">
-                  <div className="devooo-inspector-stat-row flex items-center justify-between px-3">
-                    <dt className="text-deck-text-muted/70 text-xs">Project</dt>
-                    <dd className="text-deck-text font-medium text-xs truncate ml-2">{project.title}</dd>
-                  </div>
-                  <div className="devooo-inspector-stat-row flex items-center justify-between px-3">
-                    <dt className="text-deck-text-muted/70 text-xs">BPM</dt>
-                    <dd className="tabular-nums text-xs text-deck-amber">{project.bpm}</dd>
-                  </div>
-                  <div className="devooo-inspector-stat-row flex items-center justify-between px-3">
-                    <dt className="text-deck-text-muted/70 text-xs">Tracks</dt>
-                    <dd className="text-xs">{project.tracks.length}</dd>
-                  </div>
-                  <div className="devooo-inspector-stat-row flex items-center justify-between px-3">
-                    <dt className="text-deck-text-muted/70 text-xs">Scenes</dt>
-                    <dd className="text-xs">{project.session.scenes.length}</dd>
-                  </div>
-                  <div className="devooo-inspector-stat-row flex items-center justify-between px-3">
-                    <dt className="text-deck-text-muted/70 text-xs">Automation Lanes</dt>
-                    <dd className="text-xs">{project.automation_lanes.length}</dd>
-                  </div>
-                </dl>
+                <div className="devooo-inspector-section-card p-4">
+                  <dl className="space-y-1.5">
+                    <div className="devooo-inspector-stat-row flex items-center justify-between px-3">
+                      <dt className="text-deck-text-muted/70 text-xs">Project</dt>
+                      <dd className="text-deck-text font-medium text-xs truncate ml-2">{project.title}</dd>
+                    </div>
+                    <div className="devooo-inspector-stat-row flex items-center justify-between px-3">
+                      <dt className="text-deck-text-muted/70 text-xs">BPM</dt>
+                      <dd className="tabular-nums text-xs text-deck-amber">{project.bpm}</dd>
+                    </div>
+                    <div className="devooo-inspector-stat-row flex items-center justify-between px-3">
+                      <dt className="text-deck-text-muted/70 text-xs">Tracks</dt>
+                      <dd className="text-xs">{project.tracks.length}</dd>
+                    </div>
+                    <div className="devooo-inspector-stat-row flex items-center justify-between px-3">
+                      <dt className="text-deck-text-muted/70 text-xs">Scenes</dt>
+                      <dd className="text-xs">{project.session.scenes.length}</dd>
+                    </div>
+                    <div className="devooo-inspector-stat-row flex items-center justify-between px-3">
+                      <dt className="text-deck-text-muted/70 text-xs">Automation Lanes</dt>
+                      <dd className="text-xs">{project.automation_lanes.length}</dd>
+                    </div>
+                  </dl>
+                </div>
                 {midiTracks.map((track) => (
-                  <div key={track.id} className="devooo-inspector-instrument-card p-4">
+                  <div key={track.id} className="devooo-instrument-card p-4">
                     <p className="text-[10px] font-mono text-deck-magenta mb-2 uppercase tracking-wide">
                       {track.name}
                     </p>
                     <InstrumentPanel track={track} />
                   </div>
                 ))}
-                <div className="devooo-inspector-warp-card p-4">
+                <div className="devooo-warp-card p-4">
                   <WarpSlicingPanel />
                 </div>
               </>
             ) : (
-              <div className="devooo-inspector-empty-card flex items-center px-4">
+              <div className="devooo-empty-state-card flex items-center px-4">
                 <p className="text-deck-text-muted/80 text-xs">No project loaded.</p>
               </div>
             )}

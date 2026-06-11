@@ -44,7 +44,7 @@ export function InstrumentPanel({ track }: InstrumentPanelProps) {
         Instrument
       </h3>
       {current && (
-        <div className="px-2 py-1.5 rounded bg-deck-accent/10 border border-deck-accent/30">
+        <div className="devooo-chip-active flex items-center px-3">
           <span className="text-xs font-mono text-deck-accent">{current.name}</span>
           <span className="text-[9px] text-deck-text-muted/60 ml-2">{current.plugin_type}</span>
         </div>
@@ -56,10 +56,10 @@ export function InstrumentPanel({ track }: InstrumentPanelProps) {
             type="button"
             onClick={() => handleSelect(p)}
             className={[
-              "w-full text-left px-2 py-1.5 rounded text-xs font-mono transition-colors",
+              "devooo-button-wide w-full text-left px-3 py-1.5 text-xs font-mono transition-colors",
               current?.name === p.name
-                ? "bg-deck-accent/20 text-deck-text border border-deck-accent/40"
-                : "bg-deck-panel hover:bg-deck-muted text-deck-text-muted",
+                ? "text-deck-text"
+                : "text-deck-text-muted",
             ].join(" ")}
           >
             {p.name}
@@ -70,7 +70,7 @@ export function InstrumentPanel({ track }: InstrumentPanelProps) {
         <button
           type="button"
           onClick={() => openDrumSequencer(track)}
-          className="w-full px-2 py-1.5 rounded text-xs bg-deck-magenta/20 hover:bg-deck-magenta/30 border border-deck-magenta/40 text-deck-magenta font-mono mt-1"
+          className="devooo-button-wide w-full px-3 py-1.5 text-xs text-deck-magenta font-mono mt-1"
         >
           Open Drum Sequencer →
         </button>
