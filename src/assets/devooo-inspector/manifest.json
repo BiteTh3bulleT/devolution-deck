@@ -1,0 +1,29 @@
+{
+  "pack": "DEVOOO Inspector Tab Blank Transparent PNG Assets",
+  "tab": "Inspector",
+  "source_frontend": "src/components/UtilityPanel.tsx first tab: inspector",
+  "individual_assets_are_transparent": true,
+  "preview_sheet_has_opaque_background_for_viewing": true,
+  "assets": [
+    "PREVIEW_inspector_tab_asset_sheet.png",
+    "controls/chip_active_blank.png",
+    "controls/chip_inactive_blank.png",
+    "controls/dropdown_field_blank.png",
+    "controls/horizontal_slider_slot_blank_no_switch.png",
+    "controls/input_field_blank.png",
+    "controls/small_button_blank.png",
+    "controls/toggle_shell_blank.png",
+    "controls/toggle_shell_blank_no_switch.png",
+    "controls/vertical_slider_slot_blank_no_switch.png",
+    "controls/wide_button_blank.png",
+    "inspector/empty_state_card_blank.png",
+    "inspector/inspector_section_card_blank.png",
+    "inspector/inspector_stat_row_blank.png",
+    "inspector/inspector_tab_full_blank_shell_340x900.png",
+    "inspector/instrument_assignment_card_blank.png",
+    "inspector/utility_tab_button_active_blank.png",
+    "inspector/utility_tab_button_hover_blank.png",
+    "inspector/utility_tab_button_inactive_blank.png",
+    "inspector/warp_slicing_card_blank.png"
+  ]
+}

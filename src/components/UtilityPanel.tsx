@@ -72,10 +72,10 @@ export function UtilityPanel() {
               type="button"
               onClick={() => selectTab(tab.id)}
               className={[
-                "px-2 py-1 rounded text-[11px] border transition-colors",
+                "devooo-utility-tab px-2 py-1 text-[11px] transition-colors",
                 utilityTab === tab.id
-                  ? "bg-deck-cyan/15 border-deck-cyan/40 text-deck-cyan"
-                  : "bg-deck-muted border-deck-border text-deck-text-muted hover:border-deck-cyan/30",
+                  ? "devooo-utility-tab-active text-deck-cyan"
+                  : "devooo-utility-tab-inactive text-deck-text-muted",
               ].join(" ")}
             >
               {tab.label}
@@ -84,47 +84,54 @@ export function UtilityPanel() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-4 text-sm text-deck-text-muted">
+      <div
+        className={[
+          "flex-1 overflow-y-auto p-3 space-y-4 text-sm text-deck-text-muted",
+          utilityTab === "inspector" ? "devooo-inspector-shell devooo-inspector-skinned" : "",
+        ].join(" ")}
+      >
         {utilityTab === "inspector" && (
           <>
             {project ? (
               <>
                 <dl className="space-y-1.5">
-                  <div className="flex justify-between">
+                  <div className="devooo-inspector-stat-row flex items-center justify-between px-3">
                     <dt className="text-deck-text-muted/70 text-xs">Project</dt>
                     <dd className="text-deck-text font-medium text-xs truncate ml-2">{project.title}</dd>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="devooo-inspector-stat-row flex items-center justify-between px-3">
                     <dt className="text-deck-text-muted/70 text-xs">BPM</dt>
                     <dd className="tabular-nums text-xs text-deck-amber">{project.bpm}</dd>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="devooo-inspector-stat-row flex items-center justify-between px-3">
                     <dt className="text-deck-text-muted/70 text-xs">Tracks</dt>
                     <dd className="text-xs">{project.tracks.length}</dd>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="devooo-inspector-stat-row flex items-center justify-between px-3">
                     <dt className="text-deck-text-muted/70 text-xs">Scenes</dt>
                     <dd className="text-xs">{project.session.scenes.length}</dd>
                   </div>
-                  <div className="flex justify-between">
+                  <div className="devooo-inspector-stat-row flex items-center justify-between px-3">
                     <dt className="text-deck-text-muted/70 text-xs">Automation Lanes</dt>
                     <dd className="text-xs">{project.automation_lanes.length}</dd>
                   </div>
                 </dl>
                 {midiTracks.map((track) => (
-                  <div key={track.id} className="border-t border-deck-border pt-3">
+                  <div key={track.id} className="devooo-inspector-instrument-card p-4">
                     <p className="text-[10px] font-mono text-deck-magenta mb-2 uppercase tracking-wide">
                       {track.name}
                     </p>
                     <InstrumentPanel track={track} />
                   </div>
                 ))}
-                <div className="border-t border-deck-border pt-3">
+                <div className="devooo-inspector-warp-card p-4">
                   <WarpSlicingPanel />
                 </div>
               </>
             ) : (
-              <p className="text-deck-text-muted/80 text-xs">No project loaded.</p>
+              <div className="devooo-inspector-empty-card flex items-center px-4">
+                <p className="text-deck-text-muted/80 text-xs">No project loaded.</p>
+              </div>
             )}
           </>
         )}
