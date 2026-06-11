@@ -1,4 +1,6 @@
-.devooo-utility-tab {
+.devooo-utility-tab-active,
+.devooo-utility-tab-inactive,
+.devooo-utility-tab-hover {
   min-height: 23px;
   min-width: 70px;
   border: 0;
@@ -11,16 +13,16 @@
 }
 
 .devooo-utility-tab-active {
-  background-image: url("../assets/ui/devooo/utility/utility_tab_button_active_blank.png");
+  background-image: url("../assets/ui/devooo/inspector/utility_tab_button_active_blank.png");
 }
 
 .devooo-utility-tab-inactive {
-  background-image: url("../assets/ui/devooo/utility/utility_tab_button_inactive_blank.png");
+  background-image: url("../assets/ui/devooo/inspector/utility_tab_button_inactive_blank.png");
 }
 
 .devooo-utility-tab-hover,
 .devooo-utility-tab-inactive:hover {
-  background-image: url("../assets/ui/devooo/utility/utility_tab_button_hover_blank.png");
+  background-image: url("../assets/ui/devooo/inspector/utility_tab_button_hover_blank.png");
   color: var(--deck-cyan);
 }
 
@@ -128,9 +130,7 @@
   background-image: url("../assets/ui/devooo/inspector/empty_state_card_blank.png");
 }
 
-.devooo-input-field,
-.devooo-inspector-skinned input[type="number"],
-.devooo-inspector-skinned input[type="text"] {
+.devooo-input-field {
   min-height: 32px;
   border: 0;
   background-color: transparent;
@@ -138,8 +138,7 @@
   color: var(--deck-text);
 }
 
-.devooo-dropdown-field,
-.devooo-inspector-skinned select {
+.devooo-dropdown-field {
   min-height: 32px;
   border: 0;
   background-color: transparent;
@@ -154,8 +153,7 @@
   background-image: url("../assets/ui/devooo/controls/small_button_blank.png");
 }
 
-.devooo-button-wide,
-.devooo-inspector-skinned button {
+.devooo-button-wide {
   min-height: 32px;
   border: 0;
   background-color: transparent;
@@ -163,8 +161,7 @@
 }
 
 .devooo-button-wide:disabled,
-.devooo-button-small:disabled,
-.devooo-inspector-skinned button:disabled {
+.devooo-button-small:disabled {
   opacity: 0.5;
 }
 
@@ -178,8 +175,7 @@
   background-image: url("../assets/ui/devooo/controls/chip_inactive_blank.png");
 }
 
-.devooo-toggle-shell,
-.devooo-inspector-skinned input[type="checkbox"] {
+.devooo-toggle-shell {
   width: 55px;
   min-height: 24px;
   appearance: none;
@@ -193,17 +189,15 @@
   background-image: url("../assets/ui/devooo/controls/toggle_shell_blank_no_switch.png");
 }
 
-.devooo-toggle-shell:checked,
-.devooo-inspector-skinned input[type="checkbox"]:checked {
+.devooo-toggle-shell:checked {
   background-image: url("../assets/ui/devooo/controls/toggle_shell_blank.png");
 }
 
-.devooo-inspector-skinned input[type="checkbox"]:not(:checked) {
+.devooo-toggle-shell:not(:checked) {
   background-image: url("../assets/ui/devooo/controls/toggle_shell_blank_no_switch.png");
 }
 
-.devooo-slider-horizontal-slot-no-switch,
-.devooo-inspector-skinned input[type="range"] {
+.devooo-slider-horizontal-slot-no-switch {
   min-height: 26px;
   appearance: none;
   background-color: transparent;

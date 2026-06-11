@@ -117,8 +117,8 @@ Transparent PNG skin assets live under `src/assets/ui/devooo/` by tab or shared 
 
 ```text
 controls/     Shared fields, chips, buttons, toggles, and slider slots
-utility/      Utility tab button states
-inspector/    Inspector shell, stat rows, instrument cards, warp/slicing, empty states
+utility/      Placeholder for future utility-only shared skins
+inspector/    Inspector shell, utility tab buttons, stat rows, instrument cards, warp/slicing, empty states
 mixer/        Mixer shell, channel strips, meters, faders, sends, routing, buttons
 ```
 

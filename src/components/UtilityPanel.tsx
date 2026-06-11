@@ -72,7 +72,7 @@ export function UtilityPanel() {
               type="button"
               onClick={() => selectTab(tab.id)}
               className={[
-                "devooo-utility-tab px-2 py-1 text-[11px] transition-colors",
+                "px-2 py-1 text-[11px] transition-colors",
                 utilityTab === tab.id
                   ? "devooo-utility-tab-active text-deck-cyan"
                   : "devooo-utility-tab-inactive text-deck-text-muted",
@@ -87,7 +87,7 @@ export function UtilityPanel() {
       <div
         className={[
           "flex-1 overflow-y-auto p-3 space-y-4 text-sm text-deck-text-muted",
-          utilityTab === "inspector" ? "devooo-inspector-shell devooo-inspector-skinned" : "",
+          utilityTab === "inspector" ? "devooo-inspector-shell" : "",
         ].join(" ")}
       >
         {utilityTab === "inspector" && (
