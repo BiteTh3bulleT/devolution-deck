@@ -42,6 +42,7 @@ export function UtilityPanel() {
   const utilityTab = useViewStore((s) => s.utilityTab);
   const setUtilityTab = useViewStore((s) => s.setUtilityTab);
   const midiTracks = project?.tracks.filter((track) => track.track_type === "midi") ?? [];
+  const activeShellClass = utilityTab === "mixer" ? "" : `devooo-${utilityTab}-shell`;
 
   const selectTab = (tabId: typeof utilityTab) => {
     setUtilityTab(tabId);
@@ -86,8 +87,8 @@ export function UtilityPanel() {
 
       <div
         className={[
-          "flex-1 overflow-y-auto p-3 space-y-4 text-sm text-deck-text-muted",
-          utilityTab === "inspector" ? "devooo-inspector-shell" : "",
+          "devooo-utility-tab-content flex-1 overflow-y-auto p-3 space-y-4 text-sm text-deck-text-muted",
+          activeShellClass,
         ].join(" ")}
       >
         {utilityTab === "inspector" && (

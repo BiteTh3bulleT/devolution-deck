@@ -117,12 +117,25 @@ Transparent PNG skin assets live under `src/assets/ui/devooo/` by tab or shared 
 
 ```text
 controls/     Shared fields, chips, buttons, toggles, and slider slots
-utility/      Placeholder for future utility-only shared skins
-inspector/    Inspector shell, utility tab buttons, stat rows, instrument cards, warp/slicing, empty states
+utility/      Utility tab button states
+inspector/    Inspector shell, stat rows, instrument cards, warp/slicing, empty states
 mixer/        Mixer shell, channel strips, meters, faders, sends, routing, buttons
+plugins/      Plugin chain, slot, parameter, scan, preflight, knob, and slider skins
+automation/   Lane, curve editor, parameter row, handle, and toggle skins
+render/       Render job, stem export, progress, destination field, and export button skins
+comping/      Take lane, take clip, region overlay, status strip, and action button skins
+system/       Health, device, CPU/buffer meter, diagnostic row, error, and refresh skins
+shortcuts/    Shortcut rows, keybind pills, conflicts, group cards, and record buttons
+assistant/    Message, suggestion, confidence, apply, warning, and prompt skins
+dashboard/    Widget, insight, metric, collapsible header, and status meter skins
+performance/  Macro editor, override row, color tile, binding row, and pad grid skins
+show/         Cue, protocol badge, address input, binding, visual sync, panic, blackout, fallback skins
+ops/          Release readiness, checklist, error report, support bundle, migration, compatibility skins
+branding/     Swatch, logo frame, setting input, palette row, glow toggle, preview card skins
+templates/    Template card, blueprint row, BPM badge, apply button, and preview frame skins
 ```
 
-Future tab packs should use the same folder pattern. Placeholder directories already exist for plugins, automation, render, comping, system, shortcuts, assistant, dashboard, performance, show, ops, branding, and templates. Preview sheets and asset-pack manifests are source references only and should not be imported by runtime UI.
+Future tab packs should use the same folder pattern. Preview sheets and asset-pack manifests are source references only and should not be imported by runtime UI.
 
 ## Repo Hygiene
 

@@ -13,28 +13,54 @@
 }
 
 .devooo-utility-tab-active {
-  background-image: url("../assets/ui/devooo/inspector/utility_tab_button_active_blank.png");
+  background-image: url("../assets/ui/devooo/utility/utility_tab_button_active_blank.png");
 }
 
 .devooo-utility-tab-inactive {
-  background-image: url("../assets/ui/devooo/inspector/utility_tab_button_inactive_blank.png");
+  background-image: url("../assets/ui/devooo/utility/utility_tab_button_inactive_blank.png");
 }
 
 .devooo-utility-tab-hover,
 .devooo-utility-tab-inactive:hover {
-  background-image: url("../assets/ui/devooo/inspector/utility_tab_button_hover_blank.png");
+  background-image: url("../assets/ui/devooo/utility/utility_tab_button_hover_blank.png");
   color: var(--deck-cyan);
 }
 
 .devooo-inspector-shell,
-.devooo-mixer-shell {
+.devooo-mixer-shell,
+.devooo-plugins-shell,
+.devooo-automation-shell,
+.devooo-render-shell,
+.devooo-comping-shell,
+.devooo-system-shell,
+.devooo-shortcuts-shell,
+.devooo-assistant-shell,
+.devooo-dashboard-shell,
+.devooo-performance-shell,
+.devooo-show-shell,
+.devooo-ops-shell,
+.devooo-branding-shell,
+.devooo-templates-shell {
   position: relative;
   border-radius: 18px;
   overflow-y: auto;
 }
 
 .devooo-inspector-shell::before,
-.devooo-mixer-shell::before {
+.devooo-mixer-shell::before,
+.devooo-plugins-shell::before,
+.devooo-automation-shell::before,
+.devooo-render-shell::before,
+.devooo-comping-shell::before,
+.devooo-system-shell::before,
+.devooo-shortcuts-shell::before,
+.devooo-assistant-shell::before,
+.devooo-dashboard-shell::before,
+.devooo-performance-shell::before,
+.devooo-show-shell::before,
+.devooo-ops-shell::before,
+.devooo-branding-shell::before,
+.devooo-templates-shell::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -58,8 +84,99 @@
     url("../assets/ui/devooo/mixer/mixer_tab_full_blank_shell_340x900.png");
 }
 
+.devooo-plugins-shell::before {
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
+    url("../assets/ui/devooo/plugins/plugins_tab_full_blank_shell_340x900.png");
+}
+
+.devooo-automation-shell::before {
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
+    url("../assets/ui/devooo/automation/automation_tab_full_blank_shell_340x900.png");
+}
+
+.devooo-render-shell::before {
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
+    url("../assets/ui/devooo/render/render_tab_full_blank_shell_340x900.png");
+}
+
+.devooo-comping-shell::before {
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
+    url("../assets/ui/devooo/comping/comping_tab_full_blank_shell_340x900.png");
+}
+
+.devooo-system-shell::before {
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
+    url("../assets/ui/devooo/system/system_tab_full_blank_shell_340x900.png");
+}
+
+.devooo-shortcuts-shell::before {
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
+    url("../assets/ui/devooo/shortcuts/shortcuts_tab_full_blank_shell_340x900.png");
+}
+
+.devooo-assistant-shell::before {
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
+    url("../assets/ui/devooo/assistant/assistant_tab_full_blank_shell_340x900.png");
+}
+
+.devooo-dashboard-shell::before {
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
+    url("../assets/ui/devooo/dashboard/dashboard_tab_full_blank_shell_340x900.png");
+}
+
+.devooo-performance-shell::before {
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
+    url("../assets/ui/devooo/performance/performance_tab_full_blank_shell_340x900.png");
+}
+
+.devooo-show-shell::before {
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
+    url("../assets/ui/devooo/show/show_tab_full_blank_shell_340x900.png");
+}
+
+.devooo-ops-shell::before {
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
+    url("../assets/ui/devooo/ops/ops_tab_full_blank_shell_340x900.png");
+}
+
+.devooo-branding-shell::before {
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
+    url("../assets/ui/devooo/branding/branding_tab_full_blank_shell_340x900.png");
+}
+
+.devooo-templates-shell::before {
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
+    url("../assets/ui/devooo/templates/templates_tab_full_blank_shell_340x900.png");
+}
+
 .devooo-inspector-shell > *,
-.devooo-mixer-shell > * {
+.devooo-mixer-shell > *,
+.devooo-plugins-shell > *,
+.devooo-automation-shell > *,
+.devooo-render-shell > *,
+.devooo-comping-shell > *,
+.devooo-system-shell > *,
+.devooo-shortcuts-shell > *,
+.devooo-assistant-shell > *,
+.devooo-dashboard-shell > *,
+.devooo-performance-shell > *,
+.devooo-show-shell > *,
+.devooo-ops-shell > *,
+.devooo-branding-shell > *,
+.devooo-templates-shell > * {
   position: relative;
   z-index: 1;
 }
@@ -327,4 +444,169 @@
 .devooo-limiter-toggle-shell {
   min-height: 28px;
   background-image: url("../assets/ui/devooo/mixer/limiter_toggle_shell_blank_no_switch.png");
+}
+
+.devooo-utility-tab-content {
+  background-color: rgba(7, 9, 15, 0.78);
+}
+
+.devooo-utility-tab-content :is(input:not([type="checkbox"]):not([type="range"]), textarea) {
+  min-height: 32px;
+  border: 0;
+  background-color: transparent;
+  background-image: url("../assets/ui/devooo/controls/input_field_blank.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  color: var(--deck-text);
+}
+
+.devooo-utility-tab-content select {
+  min-height: 32px;
+  border: 0;
+  appearance: none;
+  background-color: transparent;
+  background-image: url("../assets/ui/devooo/controls/dropdown_field_blank.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  color: var(--deck-text);
+}
+
+.devooo-utility-tab-content select option {
+  background: var(--deck-surface);
+  color: var(--deck-text);
+}
+
+.devooo-utility-tab-content input[type="checkbox"] {
+  width: 55px;
+  min-height: 24px;
+  appearance: none;
+  background-color: transparent;
+  background-image: url("../assets/ui/devooo/controls/toggle_shell_blank_no_switch.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+.devooo-utility-tab-content input[type="checkbox"]:checked {
+  background-image: url("../assets/ui/devooo/controls/toggle_shell_blank.png");
+}
+
+.devooo-utility-tab-content input[type="range"] {
+  min-height: 26px;
+  appearance: none;
+  background-color: transparent;
+  background-image: url("../assets/ui/devooo/controls/horizontal_slider_slot_blank_no_switch.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+.devooo-utility-tab-content input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  background: transparent;
+}
+
+.devooo-utility-tab-content input[type="range"]::-webkit-slider-thumb {
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
+  appearance: none;
+  border: 1px solid rgba(56, 215, 255, 0.8);
+  border-radius: 999px;
+  background: var(--deck-text);
+  box-shadow: 0 0 12px rgba(56, 215, 255, 0.35);
+}
+
+.devooo-utility-tab-content button:not([class*="absolute"]):not([class*="rounded-full"]) {
+  min-height: 30px;
+  border: 0;
+  background-color: transparent;
+  background-image: url("../assets/ui/devooo/controls/small_button_blank.png");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+.devooo-utility-tab-content button:disabled {
+  opacity: 0.55;
+}
+
+.devooo-utility-tab-content :is(div, section, article)[class*="border-deck-border"],
+.devooo-utility-tab-content :is(div, section, article)[class*="border-deck-cyan"],
+.devooo-utility-tab-content :is(div, section, article)[class*="border-deck-magenta"] {
+  border-color: transparent;
+  background-color: transparent;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+.devooo-plugins-shell :is(div, section, article)[class*="border-deck-border"] {
+  background-image: url("../assets/ui/devooo/plugins/plugin_chain_card_blank.png");
+}
+
+.devooo-automation-shell :is(div, section, article)[class*="border-deck-border"] {
+  background-image: url("../assets/ui/devooo/automation/automation_lane_card_blank.png");
+}
+
+.devooo-automation-shell :is(div, section, article)[class*="h-36"] {
+  background-image: url("../assets/ui/devooo/automation/automation_curve_editor_blank.png");
+}
+
+.devooo-render-shell :is(div, section, article)[class*="border-deck-border"] {
+  background-image: url("../assets/ui/devooo/render/render_settings_card_blank.png");
+}
+
+.devooo-comping-shell :is(div, section, article)[class*="border-deck-border"] {
+  background-image: url("../assets/ui/devooo/comping/take_lane_card_blank.png");
+}
+
+.devooo-system-shell :is(div, section, article)[class*="border-deck-border"] {
+  background-image: url("../assets/ui/devooo/system/system_health_tile_blank.png");
+}
+
+.devooo-shortcuts-shell :is(div, section, article)[class*="border-deck-border"] {
+  background-image: url("../assets/ui/devooo/shortcuts/shortcut_group_card_blank.png");
+}
+
+.devooo-assistant-shell :is(div, section, article)[class*="border-deck-border"] {
+  background-image: url("../assets/ui/devooo/assistant/assistant_message_card_blank.png");
+}
+
+.devooo-dashboard-shell :is(div, section, article)[class*="border-deck-border"] {
+  background-image: url("../assets/ui/devooo/dashboard/dashboard_widget_card_blank.png");
+}
+
+.devooo-performance-shell :is(div, section, article)[class*="border-deck-border"] {
+  background-image: url("../assets/ui/devooo/performance/performance_macro_editor_card_blank.png");
+}
+
+.devooo-show-shell :is(div, section, article)[class*="border-deck-border"] {
+  background-image: url("../assets/ui/devooo/show/show_cue_card_blank.png");
+}
+
+.devooo-ops-shell :is(div, section, article)[class*="border-deck-border"] {
+  background-image: url("../assets/ui/devooo/ops/release_readiness_card_blank.png");
+}
+
+.devooo-branding-shell :is(div, section, article)[class*="border-deck-border"] {
+  background-image: url("../assets/ui/devooo/branding/brand_preview_card_blank.png");
+}
+
+.devooo-templates-shell :is(div, section, article)[class*="border-deck-border"] {
+  background-image: url("../assets/ui/devooo/templates/template_card_blank.png");
+}
+
+.devooo-plugins-shell input[type="range"] {
+  background-image: url("../assets/ui/devooo/plugins/plugin_parameter_slider_slot_blank_no_switch.png");
+}
+
+.devooo-automation-shell input[type="checkbox"] {
+  background-image: url("../assets/ui/devooo/automation/automation_enable_toggle_shell_blank_no_switch.png");
+}
+
+.devooo-branding-shell input[type="checkbox"] {
+  background-image: url("../assets/ui/devooo/branding/glow_toggle_shell_blank_no_switch.png");
 }

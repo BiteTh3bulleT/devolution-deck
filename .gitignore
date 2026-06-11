@@ -28,6 +28,8 @@ npm-debug.log*
 DEVOLUTION_DECK_UPGRADE.zip
 DEVOOO_INSPECTOR_TAB_TRANSPARENT_PNG_ASSETS.zip
 DEVOOO_MIXER_TAB_TRANSPARENT_PNG_ASSETS.zip
+DEVOOO_REMAINING_UTILITY_TABS_TRANSPARENT_PNG_ASSETS.zip
 devooo_inspector_tab_assets/
 devooo_mixer_tab_assets/
+devooo_remaining_utility_tabs_assets/
 .playwright-mcp/
