@@ -27,5 +27,7 @@ npm-debug.log*
 # Local prompt/spec bundles
 DEVOLUTION_DECK_UPGRADE.zip
 DEVOOO_INSPECTOR_TAB_TRANSPARENT_PNG_ASSETS.zip
+DEVOOO_MIXER_TAB_TRANSPARENT_PNG_ASSETS.zip
 devooo_inspector_tab_assets/
+devooo_mixer_tab_assets/
 .playwright-mcp/

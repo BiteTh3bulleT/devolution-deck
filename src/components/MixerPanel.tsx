@@ -8,12 +8,20 @@ function dbLabel(value: number): string {
   return `${value >= 0 ? "+" : ""}${value.toFixed(1)} dB`;
 }
 
-function MeterBar({ peak }: { peak: number }) {
+function MeterBar({ peak, variant = "stereo" }: { peak: number; variant?: "mono" | "stereo" | "master" }) {
   const width = Math.min(100, Math.round(peak * 100));
   const color = peak >= 0.99 ? "bg-red-400" : peak > 0.8 ? "bg-amber-300" : "bg-deck-cyan";
+  const shellClass =
+    variant === "master"
+      ? "devooo-meter-master-shell"
+      : variant === "mono"
+        ? "devooo-meter-mono-shell"
+        : "devooo-meter-stereo-shell";
   return (
-    <div className="h-1.5 w-full rounded bg-deck-surface overflow-hidden">
-      <div className={`h-full ${color}`} style={{ width: `${width}%` }} />
+    <div className={`devooo-meter-bar-shell ${shellClass}`}>
+      <div className="h-1.5 w-full rounded bg-deck-surface/80 overflow-hidden">
+        <div className={`h-full ${color}`} style={{ width: `${width}%` }} />
+      </div>
     </div>
   );
 }
@@ -66,28 +74,28 @@ export function MixerPanel() {
   }
 
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
+    <div className="devooo-mixer-shell p-3 space-y-3">
+      <div className="devooo-mixer-section-card p-3 flex items-center justify-between">
         <h3 className="text-xs uppercase tracking-widest text-deck-cyan">Mixer / Routing</h3>
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => void addReturnTrack()}
-            className="px-2 py-1 rounded text-[11px] bg-deck-muted hover:bg-deck-graphite border border-deck-border"
+            className="devooo-button-small px-3 py-1 text-[11px] text-deck-text-muted"
           >
             + Return
           </button>
           <button
             type="button"
             onClick={() => void addBusTrack()}
-            className="px-2 py-1 rounded text-[11px] bg-deck-muted hover:bg-deck-graphite border border-deck-border"
+            className="devooo-button-small px-3 py-1 text-[11px] text-deck-text-muted"
           >
             + Group
           </button>
         </div>
       </div>
 
-      <div className="rounded border border-deck-cyan/30 bg-deck-panel p-2 space-y-2">
+      <div className="devooo-mixer-master-card p-4 space-y-2">
         <div className="flex items-center justify-between">
           <p className="text-xs text-deck-text">Master</p>
           <span className="text-[10px] text-deck-text-muted">{dbLabel(project.master_gain_db ?? 0)}</span>
@@ -100,6 +108,7 @@ export function MixerPanel() {
             max={12}
             step={0.1}
             value={project.master_gain_db ?? 0}
+            className="devooo-fader-horizontal-slot-no-switch"
             onChange={async (event) => {
               const next = { ...project, master_gain_db: Number(event.target.value) };
               setProject(next);
@@ -111,7 +120,7 @@ export function MixerPanel() {
             }}
           />
         </label>
-        <MeterBar peak={meters?.master_peak ?? 0} />
+        <MeterBar peak={meters?.master_peak ?? 0} variant="master" />
       </div>
 
       <div className="space-y-2">
@@ -119,10 +128,10 @@ export function MixerPanel() {
           const autoVolume = effectiveTrackVolumeDb(project, track.id, positionSecs);
           const trackPeak = meters?.tracks.find((meter) => meter.track_id === track.id)?.peak ?? 0;
           return (
-            <div key={track.id} className="rounded border border-deck-border bg-deck-panel p-2 space-y-2">
-              <MeterBar peak={trackPeak} />
+            <div key={track.id} className="devooo-mixer-track-card p-4 space-y-2">
+              <MeterBar peak={trackPeak} variant="stereo" />
               <div className="flex items-center justify-between">
-                <div>
+                <div className="devooo-channel-name-plate px-3 py-1 min-w-0">
                   <p className="text-xs text-deck-text">{track.name}</p>
                   <p className="text-[10px] text-deck-text-muted">
                     Base {dbLabel(track.volume_db)} · Auto {dbLabel(autoVolume)}
@@ -133,10 +142,10 @@ export function MixerPanel() {
                     type="button"
                     onClick={() => void toggleTrackSolo(track.id)}
                     className={[
-                      "px-2 py-1 rounded text-[11px] border",
+                      "devooo-solo-button px-2 py-1 text-[11px]",
                       track.solo
-                        ? "bg-amber-400/20 border-amber-300/40 text-amber-100"
-                        : "bg-deck-muted border-deck-border text-deck-text-muted",
+                        ? "text-amber-100"
+                        : "text-deck-text-muted",
                     ].join(" ")}
                   >
                     S
@@ -145,10 +154,10 @@ export function MixerPanel() {
                     type="button"
                     onClick={() => void toggleTrackMute(track.id)}
                     className={[
-                      "px-2 py-1 rounded text-[11px] border",
+                      "devooo-mute-button px-2 py-1 text-[11px]",
                       track.muted
-                        ? "bg-red-500/20 border-red-400/40 text-red-200"
-                        : "bg-deck-muted border-deck-border text-deck-text-muted",
+                        ? "text-red-200"
+                        : "text-deck-text-muted",
                     ].join(" ")}
                   >
                     M
@@ -165,6 +174,7 @@ export function MixerPanel() {
                     max={12}
                     step={0.1}
                     value={track.volume_db}
+                    className="devooo-fader-horizontal-slot-no-switch"
                     onChange={(event) => void setTrackVolumeDb(track.id, Number(event.target.value))}
                   />
                 </label>
@@ -176,6 +186,7 @@ export function MixerPanel() {
                     max={1}
                     step={0.01}
                     value={track.pan}
+                    className="devooo-fader-horizontal-slot-no-switch"
                     onChange={(event) => void setTrackPan(track.id, Number(event.target.value))}
                   />
                 </label>
@@ -185,7 +196,7 @@ export function MixerPanel() {
                 <select
                   value={track.group_track_id ?? ""}
                   onChange={(event) => void assignTrackToBus(track.id, event.target.value || null)}
-                  className="bg-deck-surface border border-deck-border rounded px-2 py-1 text-[11px]"
+                  className="devooo-routing-select px-3 py-1 text-[11px]"
                 >
                   <option value="">No Group</option>
                   {buses.map((bus) => (
@@ -198,7 +209,7 @@ export function MixerPanel() {
                   <button
                     type="button"
                     onClick={() => void addSendRoute(track.id, returns[0].id)}
-                    className="px-2 py-1 rounded text-[11px] bg-deck-cyan/10 border border-deck-cyan/30 text-deck-cyan"
+                    className="devooo-button-small px-3 py-1 text-[11px] text-deck-cyan"
                   >
                     + Send
                   </button>
@@ -215,22 +226,22 @@ export function MixerPanel() {
                         type="button"
                         onClick={() => void toggleSendEnabled(send.id)}
                         className={[
-                          "px-1.5 py-0.5 rounded border",
+                          "px-2 py-0.5",
                           send.enabled
-                            ? "border-deck-cyan/40 text-deck-cyan"
-                            : "border-deck-border text-deck-text-muted",
+                            ? "devooo-chip-active text-deck-cyan"
+                            : "devooo-chip-inactive text-deck-text-muted",
                         ].join(" ")}
                       >
                         {send.enabled ? "On" : "Off"}
                       </button>
                       <span className="min-w-[56px] text-deck-text-muted">{ret?.name ?? "Return"}</span>
                       <input
-                        className="flex-1"
                         type="range"
                         min={0}
                         max={1}
                         step={0.01}
                         value={send.amount}
+                        className="devooo-send-amount-slot flex-1"
                         onChange={(event) => void setSendAmount(send.id, Number(event.target.value))}
                       />
                     </div>
@@ -242,7 +253,7 @@ export function MixerPanel() {
       </div>
 
       {returns.length > 0 && (
-        <div className="rounded border border-deck-border bg-deck-panel p-2">
+        <div className="devooo-mixer-return-card p-4">
           <p className="text-[11px] uppercase tracking-wide text-deck-text-muted mb-1">Returns</p>
           <div className="space-y-1">
             {returns.map((ret) => (

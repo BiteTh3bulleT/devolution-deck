@@ -111,6 +111,19 @@ If your environment sets `CI=1` and Tauri treats it too strictly for a local des
 
 `.deck` files are JSON project documents. They store media references, tracks, clips, MIDI notes, session state, routing, show-control configuration, release settings, and recovery metadata. Media paths are still stored as file paths, so moving media outside the expected location may require relinking.
 
+## Devooo UI Asset Packs
+
+Transparent PNG skin assets live under `src/assets/ui/devooo/` by tab or shared surface:
+
+```text
+controls/     Shared fields, chips, buttons, toggles, and slider slots
+utility/      Utility tab button states
+inspector/    Inspector shell, stat rows, instrument cards, warp/slicing, empty states
+mixer/        Mixer shell, channel strips, meters, faders, sends, routing, buttons
+```
+
+Future tab packs should use the same folder pattern. Placeholder directories already exist for plugins, automation, render, comping, system, shortcuts, assistant, dashboard, performance, show, ops, branding, and templates. Preview sheets and asset-pack manifests are source references only and should not be imported by runtime UI.
+
 ## Repo Hygiene
 
 - `node_modules/`, `dist/`, `src-tauri/target/`, logs, env files, and TypeScript build-info files are ignored.

@@ -119,14 +119,14 @@ export function UtilityPanel() {
                   </dl>
                 </div>
                 {midiTracks.map((track) => (
-                  <div key={track.id} className="devooo-instrument-card p-4">
+                  <div key={track.id} className="devooo-instrument-assignment-card p-4">
                     <p className="text-[10px] font-mono text-deck-magenta mb-2 uppercase tracking-wide">
                       {track.name}
                     </p>
                     <InstrumentPanel track={track} />
                   </div>
                 ))}
-                <div className="devooo-warp-card p-4">
+                <div className="devooo-warp-slicing-card p-4">
                   <WarpSlicingPanel />
                 </div>
               </>

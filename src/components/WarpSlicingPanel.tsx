@@ -72,6 +72,7 @@ export function WarpSlicingPanel() {
         <input
           type="checkbox"
           checked={warp.enabled}
+          className="devooo-toggle-shell"
           onChange={(event) =>
             void setClipWarp(track.id, clip.id, { ...warp, enabled: event.target.checked })
           }
@@ -88,7 +89,7 @@ export function WarpSlicingPanel() {
             value={draftSourceBpm}
             onChange={(event) => setDraftSourceBpm(event.target.value)}
             placeholder={String(warp.source_bpm ?? project.bpm)}
-            className="mt-1 w-full bg-deck-panel border border-deck-border rounded px-2 py-1 text-xs"
+            className="devooo-input-field mt-1 w-full px-2 py-1 text-xs"
           />
         </label>
         <label className="text-[11px] text-deck-text-muted">
@@ -100,7 +101,7 @@ export function WarpSlicingPanel() {
             value={draftTargetBpm}
             onChange={(event) => setDraftTargetBpm(event.target.value)}
             placeholder={String(warp.target_bpm ?? project.bpm)}
-            className="mt-1 w-full bg-deck-panel border border-deck-border rounded px-2 py-1 text-xs"
+            className="devooo-input-field mt-1 w-full px-2 py-1 text-xs"
           />
         </label>
       </div>
@@ -117,7 +118,7 @@ export function WarpSlicingPanel() {
             target_bpm: targetBpm,
           });
         }}
-        className="w-full rounded border border-deck-cyan/30 bg-deck-cyan/10 text-deck-cyan text-xs px-2 py-1 disabled:opacity-50"
+        className="devooo-button-wide w-full text-deck-cyan text-xs px-2 py-1"
       >
         Apply Warp Tempo
       </button>
@@ -126,7 +127,7 @@ export function WarpSlicingPanel() {
         <button
           type="button"
           onClick={() => void detectSlicesForClip(track.id, clip.id)}
-          className="flex-1 rounded border border-deck-border bg-deck-muted hover:bg-deck-graphite text-xs px-2 py-1"
+          className="devooo-button-small flex-1 text-xs px-2 py-1"
         >
           Detect Slices
         </button>
@@ -134,7 +135,7 @@ export function WarpSlicingPanel() {
           type="button"
           onClick={() => void applySlicesToClip(track.id, clip.id, pendingMarkers)}
           disabled={pendingMarkers.length === 0}
-          className="flex-1 rounded border border-deck-magenta/30 bg-deck-magenta/10 text-deck-magenta text-xs px-2 py-1 disabled:opacity-50"
+          className="devooo-button-small flex-1 text-deck-magenta text-xs px-2 py-1"
         >
           Apply Pending
         </button>
@@ -144,7 +145,7 @@ export function WarpSlicingPanel() {
         type="button"
         onClick={() => void convertSlicesToMidi(track.id, clip.id)}
         disabled={clip.slice_markers.length === 0}
-        className="w-full rounded border border-deck-amber/30 bg-deck-amber/10 text-deck-amber text-xs px-2 py-1 disabled:opacity-50"
+        className="devooo-button-wide w-full text-deck-amber text-xs px-2 py-1"
       >
         Convert Applied Slices To MIDI
       </button>

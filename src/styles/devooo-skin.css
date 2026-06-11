@@ -4,38 +4,38 @@
   border: 0;
   border-radius: 0;
   background-color: transparent;
+  background-position: center;
   background-repeat: no-repeat;
   background-size: 100% 100%;
   line-height: 1.1;
 }
 
 .devooo-utility-tab-active {
-  background-image: url("../assets/ui/devooo/inspector/utility_tab_button_active_blank.png");
+  background-image: url("../assets/ui/devooo/utility/utility_tab_button_active_blank.png");
 }
 
 .devooo-utility-tab-inactive {
-  background-image: url("../assets/ui/devooo/inspector/utility_tab_button_inactive_blank.png");
+  background-image: url("../assets/ui/devooo/utility/utility_tab_button_inactive_blank.png");
 }
 
 .devooo-utility-tab-hover,
 .devooo-utility-tab-inactive:hover {
-  background-image: url("../assets/ui/devooo/inspector/utility_tab_button_hover_blank.png");
+  background-image: url("../assets/ui/devooo/utility/utility_tab_button_hover_blank.png");
   color: var(--deck-cyan);
 }
 
-.devooo-inspector-shell {
+.devooo-inspector-shell,
+.devooo-mixer-shell {
   position: relative;
   border-radius: 18px;
   overflow-y: auto;
 }
 
-.devooo-inspector-shell::before {
+.devooo-inspector-shell::before,
+.devooo-mixer-shell::before {
   content: "";
   position: absolute;
   inset: 0;
-  background-image:
-    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.68)),
-    url("../assets/ui/devooo/inspector/inspector_tab_full_blank_shell_340x900.png");
   background-position: top center;
   background-repeat: repeat-y;
   background-size: 100% auto;
@@ -44,15 +44,28 @@
   z-index: 0;
 }
 
-.devooo-inspector-shell > * {
+.devooo-inspector-shell::before {
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.68)),
+    url("../assets/ui/devooo/inspector/inspector_tab_full_blank_shell_340x900.png");
+}
+
+.devooo-mixer-shell::before {
+  background-image:
+    linear-gradient(rgba(7, 9, 15, 0.46), rgba(7, 9, 15, 0.7)),
+    url("../assets/ui/devooo/mixer/mixer_tab_full_blank_shell_340x900.png");
+}
+
+.devooo-inspector-shell > *,
+.devooo-mixer-shell > * {
   position: relative;
   z-index: 1;
 }
 
 .devooo-inspector-section-card,
 .devooo-inspector-stat-row,
-.devooo-instrument-card,
-.devooo-warp-card,
+.devooo-instrument-assignment-card,
+.devooo-warp-slicing-card,
 .devooo-empty-state-card,
 .devooo-input-field,
 .devooo-dropdown-field,
@@ -61,8 +74,30 @@
 .devooo-chip-active,
 .devooo-chip-inactive,
 .devooo-toggle-shell,
-.devooo-slider-vertical-slot,
-.devooo-slider-horizontal-slot {
+.devooo-toggle-shell-no-switch,
+.devooo-slider-vertical-slot-no-switch,
+.devooo-slider-horizontal-slot-no-switch,
+.devooo-mixer-master-card,
+.devooo-mixer-track-card,
+.devooo-mixer-return-card,
+.devooo-mixer-section-card,
+.devooo-channel-strip,
+.devooo-channel-strip-compact,
+.devooo-meter-bar-shell,
+.devooo-meter-mono-shell,
+.devooo-meter-stereo-shell,
+.devooo-meter-master-shell,
+.devooo-fader-horizontal-slot-no-switch,
+.devooo-fader-vertical-slot-no-switch,
+.devooo-knob-shell,
+.devooo-knob-shell-small,
+.devooo-mute-button,
+.devooo-solo-button,
+.devooo-arm-button,
+.devooo-channel-name-plate,
+.devooo-send-amount-slot,
+.devooo-routing-select,
+.devooo-limiter-toggle-shell {
   background-position: center;
   background-repeat: no-repeat;
   background-size: 100% 100%;
@@ -78,12 +113,12 @@
   background-image: url("../assets/ui/devooo/inspector/inspector_stat_row_blank.png");
 }
 
-.devooo-instrument-card {
+.devooo-instrument-assignment-card {
   min-height: 170px;
   background-image: url("../assets/ui/devooo/inspector/instrument_assignment_card_blank.png");
 }
 
-.devooo-warp-card {
+.devooo-warp-slicing-card {
   min-height: 160px;
   background-image: url("../assets/ui/devooo/inspector/warp_slicing_card_blank.png");
 }
@@ -148,6 +183,13 @@
   width: 55px;
   min-height: 24px;
   appearance: none;
+  background-image: url("../assets/ui/devooo/controls/toggle_shell_blank.png");
+}
+
+.devooo-toggle-shell-no-switch {
+  width: 55px;
+  min-height: 24px;
+  appearance: none;
   background-image: url("../assets/ui/devooo/controls/toggle_shell_blank_no_switch.png");
 }
 
@@ -156,7 +198,11 @@
   background-image: url("../assets/ui/devooo/controls/toggle_shell_blank.png");
 }
 
-.devooo-slider-horizontal-slot,
+.devooo-inspector-skinned input[type="checkbox"]:not(:checked) {
+  background-image: url("../assets/ui/devooo/controls/toggle_shell_blank_no_switch.png");
+}
+
+.devooo-slider-horizontal-slot-no-switch,
 .devooo-inspector-skinned input[type="range"] {
   min-height: 26px;
   appearance: none;
@@ -164,7 +210,127 @@
   background-image: url("../assets/ui/devooo/controls/horizontal_slider_slot_blank_no_switch.png");
 }
 
-.devooo-slider-vertical-slot {
+.devooo-slider-vertical-slot-no-switch {
   min-width: 42px;
   background-image: url("../assets/ui/devooo/controls/vertical_slider_slot_blank_no_switch.png");
+}
+
+.devooo-mixer-section-card {
+  min-height: 112px;
+  background-image: url("../assets/ui/devooo/mixer/mixer_section_card_blank.png");
+}
+
+.devooo-mixer-master-card {
+  min-height: 156px;
+  background-image: url("../assets/ui/devooo/mixer/master_section_card_blank.png");
+}
+
+.devooo-mixer-track-card {
+  min-height: 214px;
+  background-image: url("../assets/ui/devooo/mixer/channel_strip_blank.png");
+}
+
+.devooo-mixer-return-card {
+  min-height: 110px;
+  background-image: url("../assets/ui/devooo/mixer/send_return_card_blank.png");
+}
+
+.devooo-channel-strip {
+  background-image: url("../assets/ui/devooo/mixer/channel_strip_blank.png");
+}
+
+.devooo-channel-strip-compact {
+  background-image: url("../assets/ui/devooo/mixer/channel_strip_compact_blank.png");
+}
+
+.devooo-meter-bar-shell,
+.devooo-meter-mono-shell,
+.devooo-meter-stereo-shell,
+.devooo-meter-master-shell {
+  position: relative;
+  min-height: 22px;
+  padding: 7px 10px;
+}
+
+.devooo-meter-bar-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.devooo-meter-mono-shell {
+  background-image: url("../assets/ui/devooo/mixer/mono_meter_shell_blank_no_bars.png");
+}
+
+.devooo-meter-stereo-shell {
+  background-image: url("../assets/ui/devooo/mixer/stereo_meter_shell_blank_no_bars.png");
+}
+
+.devooo-meter-master-shell {
+  background-image: url("../assets/ui/devooo/mixer/master_meter_shell_blank_no_bars.png");
+}
+
+.devooo-fader-horizontal-slot-no-switch {
+  min-height: 28px;
+  appearance: none;
+  background-color: transparent;
+  background-image: url("../assets/ui/devooo/mixer/horizontal_fader_slot_blank_no_switch.png");
+}
+
+.devooo-fader-vertical-slot-no-switch {
+  min-width: 42px;
+  background-image: url("../assets/ui/devooo/mixer/vertical_fader_slot_blank_no_switch.png");
+}
+
+.devooo-knob-shell {
+  background-image: url("../assets/ui/devooo/mixer/rotary_knob_shell_blank.png");
+}
+
+.devooo-knob-shell-small {
+  background-image: url("../assets/ui/devooo/mixer/small_rotary_knob_shell_blank.png");
+}
+
+.devooo-mute-button,
+.devooo-solo-button,
+.devooo-arm-button {
+  min-width: 34px;
+  min-height: 28px;
+  border: 0;
+  background-color: transparent;
+}
+
+.devooo-mute-button {
+  background-image: url("../assets/ui/devooo/mixer/mute_button_blank.png");
+}
+
+.devooo-solo-button {
+  background-image: url("../assets/ui/devooo/mixer/solo_button_blank.png");
+}
+
+.devooo-arm-button {
+  background-image: url("../assets/ui/devooo/mixer/arm_button_blank.png");
+}
+
+.devooo-channel-name-plate {
+  min-height: 32px;
+  background-image: url("../assets/ui/devooo/mixer/channel_name_plate_blank.png");
+}
+
+.devooo-send-amount-slot {
+  min-height: 26px;
+  appearance: none;
+  background-color: transparent;
+  background-image: url("../assets/ui/devooo/mixer/send_amount_slot_blank.png");
+}
+
+.devooo-routing-select {
+  min-height: 32px;
+  border: 0;
+  background-color: transparent;
+  background-image: url("../assets/ui/devooo/mixer/routing_select_blank.png");
+  color: var(--deck-text);
+}
+
+.devooo-limiter-toggle-shell {
+  min-height: 28px;
+  background-image: url("../assets/ui/devooo/mixer/limiter_toggle_shell_blank_no_switch.png");
 }
