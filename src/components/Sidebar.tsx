@@ -1,3 +1,4 @@
+import { CosmicIdentity } from "./CosmicIdentity";
 import { useCallback, useMemo, useState } from "react";
 import * as api from "../api";
 import { useBrowserStore } from "../stores/browserStore";
@@ -54,6 +55,7 @@ export function Sidebar() {
 
   return (
     <aside className="deck-sidebar w-[216px] xl:w-[240px] shrink-0 flex flex-col bg-deck-surface border-r border-deck-border overflow-hidden">
+      <CosmicIdentity />
       <div className="p-2 border-b border-deck-border space-y-2">
         <h2 className="text-xs font-display font-semibold uppercase tracking-wider text-deck-text-muted">
           Browser

@@ -1,3 +1,4 @@
+import cosmicLogo from "../assets/ui/v5/devooo-logo.png";
 import { useProjectStore } from "../stores/projectStore";
 import { useTransportStore } from "../stores/transportStore";
 import { useLoopStore } from "../stores/loopStore";
@@ -255,9 +256,10 @@ export function TransportBar() {
       <MetronomeWidget />
 
       {/* Title */}
-      <div className="flex-1 min-w-0 px-2">
+      <div className="cosmic-title flex-1 min-w-0 px-2">
+        <img src={cosmicLogo} alt="DEVOOO" className="cosmic-transport-logo" width={120} height={40} />
         <span className="font-display font-semibold text-deck-text truncate block text-sm">
-          {project?.branding.logo_text ?? "DΞVOLUTION"} · {project?.title ?? "Untitled"}
+          {project?.title ?? "Untitled"}
         </span>
         <span className="text-[10px] text-deck-text-muted truncate block">
           {project?.branding.artist_name ?? "DJ Devooo"} · {project?.branding.motto ?? "Artist Operating System"}

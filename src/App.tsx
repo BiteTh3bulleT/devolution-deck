@@ -172,8 +172,12 @@ export default function App() {
     const root = document.documentElement;
     if (!project) return;
     const savedTheme = project.branding.theme;
-    const theme = savedTheme.bg_hex === "#07090f" && savedTheme.surface_hex === "#101522"
-      ? { ...savedTheme, bg_hex:"#0b1015",surface_hex:"#141c23",panel_hex:"#1b252e",border_hex:"#34424c",text_hex:"#dce5ea",text_muted_hex:"#98aab5",accent_hex:"#e4a75f",cyan_hex:"#7ccbd0",magenta_hex:"#b69ecb",amber_hex:"#edbc77" }
+    const stockThemes = [
+      { bg_hex:"#07090f",surface_hex:"#101522",panel_hex:"#131a2a",border_hex:"#1f2a40",text_hex:"#e8edf8",text_muted_hex:"#95a3bf",accent_hex:"#ff6b1a",cyan_hex:"#38d7ff",magenta_hex:"#ff4fd8",amber_hex:"#ffc247" },
+      { bg_hex:"#0b1015",surface_hex:"#141c23",panel_hex:"#1b252e",border_hex:"#34424c",text_hex:"#dce5ea",text_muted_hex:"#98aab5",accent_hex:"#e4a75f",cyan_hex:"#7ccbd0",magenta_hex:"#b69ecb",amber_hex:"#edbc77" },
+    ];
+    const theme = stockThemes.some(stock => Object.entries(stock).every(([key, color]) => savedTheme[key as keyof typeof savedTheme] === color))
+      ? { ...savedTheme, bg_hex:"#090513",surface_hex:"#130c24",panel_hex:"#201331",border_hex:"#543567",text_hex:"#f3eefe",text_muted_hex:"#b8a8ce",accent_hex:"#bfed7b",cyan_hex:"#70e7f4",magenta_hex:"#f590d8",amber_hex:"#ffd17d" }
       : savedTheme;
     root.style.setProperty("--deck-bg", theme.bg_hex);
     root.style.setProperty("--deck-surface", theme.surface_hex);

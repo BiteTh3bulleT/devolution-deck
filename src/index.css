@@ -1,21 +1,22 @@
 @import "tailwindcss";
 @import "./styles/hardware.css";
+@import "./styles/cosmic.css";
 @config "../tailwind.config.js";
 
 :root {
-  --deck-bg: #0b1015;
-  --deck-surface: #141c23;
-  --deck-panel: #1b252e;
-  --deck-border: #34424c;
-  --deck-muted: #29333c;
-  --deck-graphite: #3e4c57;
-  --deck-text: #dce5ea;
-  --deck-text-muted: #98aab5;
-  --deck-accent: #e4a75f;
-  --deck-accent-dim: #b17a39;
-  --deck-cyan: #7ccbd0;
-  --deck-magenta: #b69ecb;
-  --deck-amber: #edbc77;
+  --deck-bg: #090513;
+  --deck-surface: #130c24;
+  --deck-panel: #201331;
+  --deck-border: #543567;
+  --deck-muted: #332143;
+  --deck-graphite: #664778;
+  --deck-text: #f3eefe;
+  --deck-text-muted: #b8a8ce;
+  --deck-accent: #bfed7b;
+  --deck-accent-dim: #789b44;
+  --deck-cyan: #70e7f4;
+  --deck-magenta: #f590d8;
+  --deck-amber: #ffd17d;
 }
 
 * {

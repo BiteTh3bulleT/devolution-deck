@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
-import knobCap from "../../assets/ui/v3/knob-cap.png";
-import knobBezel from "../../assets/ui/v3/knob-bezel.png";
-import jogDial from "../../assets/ui/v3/jog-dial.png";
+import knobCap from "../../assets/ui/v5/knob-cap.png";
+import knobBezel from "../../assets/ui/v5/knob-bezel.png";
+import jogDial from "../../assets/ui/v5/jog-dial.png";
 
 interface KnobProps {
   label: string; value: number; min: number; max: number; step?: number;

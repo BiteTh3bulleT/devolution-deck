@@ -23,3 +23,14 @@ Knobs retain native range semantics, keyboard arrows/Home/End and numeric readou
 Custom project palettes are preserved. Projects using the original default palette receive the new graphite palette visually; newly created projects store the new default. The texture and all fonts are bundled for offline use.
 
 Browser previews use explicit fixture data and real native DSP through the local verification adapter. They do not certify hardware playback or third-party plugin compatibility.
+
+
+## v0.5 DEVOOO alien mothership
+
+User-supplied brand reference is preserved in design/devooo-original-logo.jpg. The transparent UI wordmark is an ImageGen extraction derived from that supplied raster; it is not a vector master. The original is retained for precise brand reproduction.
+
+ImageGen created src/assets/ui/v5/alien-mothership.png: midnight-violet cosmic atmosphere, pink/cyan/lime/gold accents, a relaxed headphones-wearing alien, smoke, a UFO and luminous mushrooms. The art is static and placed behind translucent decorative framing; meters, forms and charts retain dark solid surfaces. It adds no animation or GPU runtime.
+
+Seven physical control sprites were re-rendered in Blender 5.2.0 LTS / Cycles with violet metal, cyan rim lights, lime indices and magenta status lamps. Editable scenes: design/blender/devolution-cosmic-controls.blend; generator: design/blender/render_cosmic_controls.py. This preserves the existing keyboard, drag, fine adjustment and reset behavior.
+
+The default theme changes to midnight violet, neon cyan, pink, warm gold and pale acid green. Prior stock themes are mapped visually when opened; custom saved colors remain respected. No project schema change is needed.
