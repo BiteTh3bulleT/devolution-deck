@@ -35,6 +35,7 @@ export function DeckPerformanceView() {
   const removeItemFromCrate = useDjStore((state) => state.removeItemFromCrate);
 
   const loadDeckTrack = useDjStore((state) => state.loadDeckTrack);
+  const setHeadphoneCue = useDjStore(state => state.setHeadphoneCue);
   const setDeckPlaying = useDjStore((state) => state.setDeckPlaying);
   const seekDeck = useDjStore((state) => state.seekDeck);
   const turntableNudge = useDjStore((state) => state.turntableNudge);
@@ -268,6 +269,7 @@ export function DeckPerformanceView() {
           <DeckChannelCard
             deck={deckA}
             loadedItem={loadedA}
+            onHeadphoneCue={(id, enabled) => runWithError(() => setHeadphoneCue(id, enabled), setError)}
             onTogglePlay={(deckId, playing) => runWithError(() => setDeckPlaying(deckId, playing), setError)}
             onSeek={(deckId, positionSecs) => runWithError(() => seekDeck(deckId, positionSecs), setError)}
             onNudge={(deckId, deltaBeats) => runWithError(() => turntableNudge(deckId, deltaBeats), setError)}
@@ -289,6 +291,7 @@ export function DeckPerformanceView() {
           <DeckChannelCard
             deck={deckB}
             loadedItem={loadedB}
+            onHeadphoneCue={(id, enabled) => runWithError(() => setHeadphoneCue(id, enabled), setError)}
             onTogglePlay={(deckId, playing) => runWithError(() => setDeckPlaying(deckId, playing), setError)}
             onSeek={(deckId, positionSecs) => runWithError(() => seekDeck(deckId, positionSecs), setError)}
             onNudge={(deckId, deltaBeats) => runWithError(() => turntableNudge(deckId, deltaBeats), setError)}

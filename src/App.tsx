@@ -203,7 +203,7 @@ export default function App() {
         switch (action) {
           case "transport_play_stop": {
             const transport = useTransportStore.getState();
-            if (transport.status === "playing") {
+            if (transport.status !== "stopped") {
               await transport.stop();
               metronomeService.stop();
               return;

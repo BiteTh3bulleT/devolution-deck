@@ -996,3 +996,16 @@ export async function onboardingStateUpdate(onboarding: OnboardingState): Promis
 export async function systemHealthSnapshot(): Promise<SystemHealthSnapshot> {
   return invoke<SystemHealthSnapshot>("system_health_snapshot");
 }
+
+export async function audioOutputStatus() {
+  return invoke<import('../types/audioEngine').OutputDiagnostics>('audio_output_status');
+}
+export async function audioOutputConfigure(settings: import('../types/audioEngine').OutputSettings) {
+  return invoke<import('../types/audioEngine').OutputDiagnostics>('audio_output_configure', { settings });
+}
+export async function audioOutputResetStatistics() {
+  return invoke<import('../types/audioEngine').OutputDiagnostics>('audio_output_reset_statistics');
+}
+export async function deckSetHeadphoneCue(deckId: string, enabled: boolean) {
+  return invoke<DeckState>('deck_set_headphone_cue', { deckId, enabled });
+}

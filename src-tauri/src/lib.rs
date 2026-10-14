@@ -14,6 +14,8 @@ mod show_control;
 #[cfg(feature = "test-tools")]
 pub use audio::lab;
 #[cfg(feature = "test-tools")]
+pub use audio::PlaybackHandle;
+#[cfg(feature = "test-tools")]
 pub use lab_commands::audio_lab_devices;
 #[cfg(feature = "test-tools")]
 pub use models::Project;
@@ -71,6 +73,9 @@ pub fn run() {
             commands::playback_play,
             commands::playback_play_arrangement,
             commands::playback_meters,
+            commands::audio_output_status,
+            commands::audio_output_configure,
+            commands::audio_output_reset_statistics,
             commands::playback_stop,
             commands::playback_refresh,
             commands::playback_position_ms,
@@ -148,6 +153,7 @@ pub fn run() {
             commands::crate_item_remove,
             commands::deck_load_track,
             commands::deck_set_playing,
+            commands::deck_set_headphone_cue,
             commands::deck_seek_position,
             commands::deck_turntable_nudge,
             commands::deck_turntable_scratch,

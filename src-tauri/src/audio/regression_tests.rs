@@ -90,9 +90,10 @@ fn pre_fader_send_ignores_pan_and_gain() {
     let (_dir, mut p) = fixture();
     p.tracks[0].volume_db = -40.0;
     p.tracks[0].pan = 1.0;
-    p.routing.returns =
-        serde_json::from_value(json!([{"id":"r","name":"Return","index":0,"gain_db":0,"muted":false}]))
-            .unwrap();
+    p.routing.returns = serde_json::from_value(
+        json!([{"id":"r","name":"Return","index":0,"gain_db":0,"muted":false}]),
+    )
+    .unwrap();
     p.routing.sends=serde_json::from_value(json!([{"id":"s","from_track_id":"t","to_return_id":"r","amount":1.0,"pre_fader":true,"enabled":true}])).unwrap();
     let rendered = render::render_project_tracks(&p, false).unwrap();
     let ret = rendered.iter().find(|t| t.track_id == "r").unwrap();
@@ -108,4 +109,12 @@ fn comp_selection_replaces_only_its_interval() {
     for sample in &rendered[0].samples[..16000] {
         assert!((*sample - 0.2).abs() < 1e-6);
     }
+}
+
+#[test]
+fn track_render_keeps_float_headroom_for_later_master_attenuation() {
+    let (_dir, mut project) = fixture();
+    project.tracks[0].volume_db = 20.0;
+    let rendered = render::render_project_tracks(&project, false).unwrap();
+    assert!((rendered[0].samples[0] - 2.0).abs() < 1e-5);
 }

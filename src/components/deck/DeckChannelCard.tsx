@@ -5,6 +5,7 @@ import type { DeckState, LibraryItem } from "../../types";
 interface DeckChannelCardProps {
   deck: DeckState;
   loadedItem?: LibraryItem;
+  onHeadphoneCue: (deckId: string, enabled: boolean) => Promise<void>;
   onTogglePlay: (deckId: string, playing: boolean) => Promise<void>;
   onSeek: (deckId: string, positionSecs: number) => Promise<void>;
   onNudge: (deckId: string, deltaBeats: number) => Promise<void>;
@@ -33,6 +34,7 @@ function progressPct(deck: DeckState, loadedItem?: LibraryItem): number {
 export function DeckChannelCard({
   deck,
   loadedItem,
+  onHeadphoneCue,
   onTogglePlay,
   onSeek,
   onNudge,
@@ -78,6 +80,11 @@ export function DeckChannelCard({
         </button>
       </div>
 
+      <button type="button" aria-label={`Headphone cue ${deck.id}`} aria-pressed={deck.headphone_cue}
+        disabled={!deck.loaded_track || busy} onClick={() => void onHeadphoneCue(deck.id, !deck.headphone_cue)}
+        className="px-3 py-1 rounded border text-xs border-deck-cyan/40 text-deck-cyan">
+        Headphone cue {deck.headphone_cue ? 'ON' : 'OFF'}
+      </button>
       <div className="deck-jog-stage">
         <JogDial label={`Jog Deck ${deck.id}`} position={deck.position_secs} vinylMode={deck.vinyl_mode} disabled={!deck.loaded_track || busy} onScratch={delta => void onScratch(deck.id, delta)} onNudge={beats => void onNudge(deck.id, beats)} />
         <div className="deck-lcd"><small>Deck {deck.id} / elapsed</small><strong>{Math.floor(deck.position_secs / 60).toString().padStart(2,"0")}:{(deck.position_secs % 60).toFixed(1).padStart(4,"0")}</strong><small>{deck.playing ? "Playing" : "Standby"} · {deck.loop_state?.enabled ? "Loop" : "Free"}</small></div>

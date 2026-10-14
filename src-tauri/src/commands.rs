@@ -1084,41 +1084,74 @@ pub fn playback_play(state: State<AppState>, payload: PlayClipPayload) -> Result
         .play(&path, payload.offset_secs, payload.duration_secs)
 }
 
-/// Play the full arrangement from a timeline position.
+/// Prepare off the IPC thread. A newer Play, Stop, audition or project switch cancels this start.
 #[tauri::command]
-pub fn playback_play_arrangement(
-    state: State<AppState>,
+pub async fn playback_play_arrangement(
+    state: State<'_, AppState>,
     start_secs: Option<f64>,
 ) -> Result<(), String> {
-    let start_secs = start_secs.unwrap_or(0.0).max(0.0);
-    let (playback, loop_region) = {
-        let project = state.project.lock().map_err(|_| "lock")?;
-        (
-            crate::audio::engine::prepare_project_playback(&project, 0.0)?,
-            project
-                .loop_region
-                .as_ref()
-                .filter(|r| r.enabled)
-                .map(|r| (r.start_secs, r.end_secs)),
-        )
-    };
-    {
-        let mut meter_source = state.meter_source.lock().map_err(|_| "lock")?;
-        *meter_source = Some(MeterSource {
-            rendered_tracks: playback.rendered_tracks,
-            master: playback.buffer.samples.clone(),
-            master_start_secs: playback.buffer.timeline_start_secs,
-            sample_rate: playback.buffer.sample_rate,
-            channels: playback.buffer.channels,
-        });
+    let start_secs = start_secs.unwrap_or(0.0);
+    if !start_secs.is_finite() || start_secs < 0.0 {
+        return Err("Invalid playback position".into());
     }
-    state.playback.play_arrangement(
-        playback.buffer.samples,
+    let ticket = state.playback.reserve_start();
+    let project = state.project.lock().map_err(|_| "lock")?.clone();
+    let input = project.clone();
+    let playback = tauri::async_runtime::spawn_blocking(move || {
+        crate::audio::engine::prepare_project_playback(&input, 0.0)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    let current = state.project.lock().map_err(|_| "lock")?;
+    if current.id != project.id {
+        return Err("Playback start cancelled: project changed".into());
+    }
+    let loop_region = project
+        .loop_region
+        .as_ref()
+        .filter(|r| r.enabled)
+        .map(|r| (r.start_secs, r.end_secs));
+    state.playback.play_arrangement_reserved(
+        ticket,
+        playback.buffer.samples.clone(),
         playback.buffer.sample_rate,
         playback.buffer.channels,
         start_secs,
         loop_region,
-    )
+    )?;
+    *state.meter_source.lock().map_err(|_| "lock")? = Some(MeterSource {
+        rendered_tracks: playback.rendered_tracks,
+        master: playback.buffer.samples,
+        master_start_secs: 0.0,
+        sample_rate: playback.buffer.sample_rate,
+        channels: playback.buffer.channels,
+    });
+    Ok(())
+}
+
+#[tauri::command]
+pub fn audio_output_status(
+    state: State<AppState>,
+) -> Result<crate::audio::output::OutputDiagnostics, String> {
+    state.playback.diagnostics()
+}
+#[tauri::command]
+pub fn audio_output_configure(
+    state: State<AppState>,
+    settings: crate::audio::output::OutputSettings,
+) -> Result<crate::audio::output::OutputDiagnostics, String> {
+    let capture = state.recording.lock().map_err(|_| "lock")?;
+    if capture.is_some() {
+        return Err("Stop recording before changing the output device".into());
+    }
+    state.playback.configure(settings)
+}
+#[tauri::command]
+pub fn audio_output_reset_statistics(
+    state: State<AppState>,
+) -> Result<crate::audio::output::OutputDiagnostics, String> {
+    state.playback.reset_statistics()?;
+    state.playback.diagnostics()
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -2870,6 +2903,37 @@ pub fn deck_load_track(
     drop(project);
     apply_deck_playback(&state, mix)?;
     Ok(out)
+}
+
+#[tauri::command]
+pub fn deck_set_headphone_cue(
+    state: State<AppState>,
+    deck_id: String,
+    enabled: bool,
+) -> Result<DeckState, String> {
+    if enabled
+        && state
+            .playback
+            .diagnostics()?
+            .settings
+            .cue_channels
+            .is_none()
+    {
+        return Err("Assign a separate cue output pair in System first".into());
+    }
+    let (deck, mix) = {
+        let mut project = state.project.lock().map_err(|_| "lock")?;
+        sync_deck_positions(&state, &mut project);
+        let normalized = normalize_deck_id(&deck_id);
+        let deck = find_deck_mut(&mut project, &normalized)?;
+        deck.headphone_cue = enabled;
+        let out = deck.clone();
+        (out, prepare_deck_playback(&project)?)
+    };
+    if mix.is_some() {
+        apply_deck_playback(&state, mix)?;
+    }
+    Ok(deck)
 }
 
 #[tauri::command]

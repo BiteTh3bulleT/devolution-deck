@@ -42,7 +42,11 @@ fn db_to_gain(db: f64) -> f32 {
 }
 
 fn clip_sample(v: f32) -> f32 {
-    v.clamp(-1.0, 1.0)
+    if v.is_finite() {
+        v
+    } else {
+        0.0
+    }
 }
 
 /// Pan as a balance control: unity at center, attenuates the opposite

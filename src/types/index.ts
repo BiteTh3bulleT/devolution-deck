@@ -810,6 +810,7 @@ export interface DeckTrackReference {
 }
 
 export interface DeckState {
+  headphone_cue: boolean;
   id: string;
   loaded_track?: DeckTrackReference;
   playing: boolean;

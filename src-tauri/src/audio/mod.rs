@@ -5,6 +5,7 @@ mod deck_engine;
 pub mod editing;
 pub mod engine;
 pub mod lab;
+pub mod output;
 mod playback_live;
 pub mod recording;
 mod render;

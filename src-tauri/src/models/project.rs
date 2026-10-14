@@ -4,7 +4,7 @@ use crate::models::midi::{MidiClip, MidiNote};
 use serde::{Deserialize, Serialize};
 
 /// Project file schema version. Bump when persistence format changes.
-pub const PROJECT_SCHEMA_VERSION: u32 = 9;
+pub const PROJECT_SCHEMA_VERSION: u32 = 10;
 fn default_project_id() -> String {
     uuid::Uuid::new_v4().to_string()
 }
@@ -667,6 +667,8 @@ pub struct DeckState {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub loaded_track: Option<DeckTrackReference>,
     pub playing: bool,
+    #[serde(default)]
+    pub headphone_cue: bool,
     pub position_secs: f64,
     pub tempo_bpm: f64,
     pub tempo_multiplier: f64,
@@ -689,6 +691,7 @@ impl DeckState {
             id: id.to_string(),
             loaded_track: None,
             playing: false,
+            headphone_cue: false,
             position_secs: 0.0,
             tempo_bpm,
             tempo_multiplier: 1.0,

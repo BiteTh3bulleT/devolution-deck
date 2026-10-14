@@ -44,6 +44,7 @@ interface DjStoreState {
   removeItemFromCrate: (crateId: string, itemId: string) => Promise<void>;
 
   loadDeckTrack: (deckId: string, libraryItemId: string) => Promise<void>;
+  setHeadphoneCue: (deckId: string, enabled: boolean) => Promise<void>;
   setDeckPlaying: (deckId: string, playing: boolean) => Promise<void>;
   seekDeck: (deckId: string, positionSecs: number) => Promise<void>;
   turntableNudge: (deckId: string, deltaBeats: number) => Promise<void>;
@@ -150,6 +151,11 @@ export const useDjStore = create<DjStoreState>((set) => ({
 
   async loadDeckTrack(deckId, libraryItemId) {
     await api.deckLoadTrack(deckId, libraryItemId);
+    await reloadProject();
+  },
+
+  async setHeadphoneCue(deckId, enabled) {
+    await api.deckSetHeadphoneCue(deckId, enabled);
     await reloadProject();
   },
 

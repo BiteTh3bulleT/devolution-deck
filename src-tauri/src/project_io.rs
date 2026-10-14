@@ -161,6 +161,9 @@ pub fn load_project(path: &Path) -> Result<Project, String> {
         }
     }
 
+    if file_version < 10 {
+        project.version = 10;
+    }
     validate_project(&project)?;
     Ok(project)
 }
@@ -253,7 +256,7 @@ mod tests {
         value.as_object_mut().unwrap().remove("id");
         fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
         let p = load_project(&path).unwrap();
-        assert_eq!(p.version, 9);
+        assert_eq!(p.version, PROJECT_SCHEMA_VERSION);
         save_project(&p, &path).unwrap();
         let again = load_project(&path).unwrap();
         assert_eq!(p.id, again.id);

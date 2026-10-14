@@ -200,7 +200,7 @@ export function TransportBar() {
         <button
           type="button"
           onClick={handlePlay}
-          disabled={status === "playing"}
+          disabled={status !== "stopped"}
           className="w-9 h-9 rounded bg-deck-accent hover:bg-deck-accent-dim disabled:opacity-50 flex items-center justify-center text-deck-bg font-display font-semibold"
           title="Play" aria-label="Play"
         >

@@ -9,6 +9,16 @@ fn run(request: Value) -> Result<Value, String> {
     let args = &request["args"];
     let path = |key: &str| args[key].as_str().ok_or_else(|| format!("Missing {key}"));
     match request["command"].as_str().unwrap_or("") {
+        "audio_output_smoke" => {
+            let playback = devolution_deck_lib::PlaybackHandle::new()?;
+            let seconds = args["seconds"].as_u64().unwrap_or(2).clamp(1,60);
+            playback.play_samples(vec![0.0; 48000 * 2 * (seconds as usize + 1)], 48000, 2, 0.0)?;
+            std::thread::sleep(std::time::Duration::from_secs(seconds));
+            let status = playback.diagnostics()?;
+            playback.stop();
+            if status.error.is_some() || status.callbacks == 0 { return Err(format!("No working callback: {:?}", status)); }
+            serde_json::to_value(status).map_err(|e| e.to_string())
+        }
         "project_new" => {
             serde_json::to_value(devolution_deck_lib::Project::default()).map_err(|e| e.to_string())
         }
