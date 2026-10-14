@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "DEVOLUTION DECK",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "identifier": "com.devooo.devolution-deck",
   "build": {
     "beforeDevCommand": "npm run dev",

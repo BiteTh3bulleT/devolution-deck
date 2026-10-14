@@ -50,6 +50,7 @@ pub(crate) fn prepare_live_decks(project: &Project) -> Result<Vec<super::Playing
             position_secs: deck.position_secs,
             speed: deck.tempo_multiplier.clamp(0.25, 4.0),
             gain: db_to_gain(deck.gain_db) * crossfader_gain_for_deck(project, &deck.id) as f32,
+            filter: deck.filter.clamp(-1.0, 1.0) as f32,
             cue_gain: if deck.headphone_cue {
                 db_to_gain(deck.gain_db)
             } else {

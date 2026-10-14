@@ -48,3 +48,20 @@
 .hardware-control-value { color:var(--deck-accent); }
 .hardware-jog-hub { color:#e1b6fb; }
 @media (max-width:1150px) { .cosmic-transport-logo { width:74px;height:28px; }.cosmic-title { column-gap:6px; }.cosmic-title>span:last-child { display:none; }.cosmic-identity { min-height:140px;padding-top:15px; }.cosmic-identity img { width:132px;height:44px;margin-bottom:16px; } }
+
+/* Touch performance opens the console width for two independently captured platters. */
+.deck-app:has(.touch-performance) :is(.deck-sidebar,.deck-utility) { display:none; }
+.deck-app button.hardware-jog { width:clamp(220px,22vw,300px);height:clamp(220px,22vw,300px);max-width:100%; }
+.deck-jog-stage { flex-direction:column; }
+.touch-performance .deck-platter-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.deck-app .touch-performance button.hardware-jog { width:clamp(320px,32vw,440px);height:clamp(320px,32vw,440px); }
+.touch-performance :is(button,input,select) { min-height:48px;min-width:48px; font-size:14px; }
+.touch-performance button { touch-action:manipulation;white-space:normal; }
+.touch-performance .hardware-jog { touch-action:none; }
+.touch-performance .hardware-knob-face { width:112px;height:112px; }
+.touch-performance .hardware-control-label,.touch-performance .hardware-control-value { font-size:13px; }
+.touch-performance .deck-lcd { text-align:center;min-width:220px; }
+.touch-performance .deck-lcd strong { font-size:26px; }
+.deck-app:has(.touch-performance) :is(.deck-transport,.deck-status) button { min-height:48px;min-width:48px; }
+.deck-app:has(.touch-performance) .deck-transport { overflow-x:auto; }
+@media (max-width:800px) { .touch-performance .deck-platter-grid { grid-template-columns:minmax(0,1fr); } }

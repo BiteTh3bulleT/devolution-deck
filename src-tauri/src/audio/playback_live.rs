@@ -19,6 +19,7 @@ pub(crate) struct PlayingDeck {
     pub position_secs: f64,
     pub speed: f64,
     pub gain: f32,
+    pub filter: f32,
     pub cue_gain: f32,
     pub loop_region: Option<(f64, f64)>,
     pub playing: bool,
@@ -34,7 +35,16 @@ enum Content {
     },
     Decks(Vec<PlayingDeck>),
 }
+#[derive(Clone, Copy)]
+struct ScheduledSeek {
+    generation: u64,
+    at_frame: u64,
+    deck: usize,
+    position: f64,
+}
 struct OutputState {
+    scheduled: [Option<ScheduledSeek>; 32],
+    render_clock: u64,
     content: Content,
     generation: u64,
 }
@@ -51,6 +61,7 @@ struct RenderCursor {
     index: usize,
     cached_generation: u64,
     clock_frame: u64,
+    dsp: [super::performance_dsp::DeckDsp; 2],
 }
 impl RenderCursor {
     fn new(state: Arc<Mutex<OutputState>>, control: Arc<OutputControl>) -> Self {
@@ -61,6 +72,7 @@ impl RenderCursor {
             index: BLOCK,
             cached_generation: 0,
             clock_frame: 0,
+            dsp: [super::performance_dsp::DeckDsp::default(); 2],
         }
     }
     fn next_frame(&mut self, shutdown: &AtomicBool) -> AudioFrame {
@@ -92,9 +104,35 @@ impl RenderCursor {
         };
         if self.cached_generation != state.generation {
             self.clock_frame = self.control.last_clock_frame();
+            self.dsp = [super::performance_dsp::DeckDsp::default(); 2];
         }
         self.cached_generation = state.generation;
+        if let Content::Decks(decks) = &state.content {
+            for deck in decks {
+                let index = if deck.id == "A" { 0 } else { 1 };
+                self.dsp[index].target(deck.gain, deck.cue_gain, deck.filter);
+            }
+        }
         for frame in &mut self.block {
+            for index in 0..state.scheduled.len() {
+                if let Some(event) = state.scheduled[index] {
+                    if event.generation != state.generation {
+                        state.scheduled[index] = None;
+                        continue;
+                    }
+                    if event.at_frame <= self.clock_frame + 1 {
+                        if let Content::Decks(decks) = &mut state.content {
+                            if let Some(deck) = decks
+                                .iter_mut()
+                                .find(|d| d.id == if event.deck == 0 { "A" } else { "B" })
+                            {
+                                deck.position_secs = event.position;
+                            }
+                        }
+                        state.scheduled[index] = None;
+                    }
+                }
+            }
             *frame = AudioFrame {
                 generation: state.generation,
                 ..Default::default()
@@ -146,12 +184,16 @@ impl RenderCursor {
                         }
                         let j = (i + 1).min(len - 1);
                         let t = (f - i as f64) as f32;
-                        frame.left += (deck.left[i] * (1.0 - t) + deck.left[j] * t) * deck.gain;
-                        frame.right += (deck.right[i] * (1.0 - t) + deck.right[j] * t) * deck.gain;
-                        frame.cue_left +=
-                            (deck.left[i] * (1.0 - t) + deck.left[j] * t) * deck.cue_gain;
-                        frame.cue_right +=
-                            (deck.right[i] * (1.0 - t) + deck.right[j] * t) * deck.cue_gain;
+                        let input = [
+                            deck.left[i] * (1.0 - t) + deck.left[j] * t,
+                            deck.right[i] * (1.0 - t) + deck.right[j] * t,
+                        ];
+                        let index = if deck.id == "A" { 0 } else { 1 };
+                        let (main, cue) = self.dsp[index].process(input);
+                        frame.left += main[0];
+                        frame.right += main[1];
+                        frame.cue_left += cue[0];
+                        frame.cue_right += cue[1];
                         deck.position_secs += deck.speed / RATE as f64;
                         position = position.max(deck.position_secs);
                         active = true;
@@ -178,12 +220,15 @@ impl RenderCursor {
             }
             frame.engine_frame = self.clock_frame;
         }
+        state.render_clock = self.clock_frame;
         self.index = 0;
     }
 }
 impl PlaybackHandle {
     pub fn new() -> Result<Self, String> {
         let state = Arc::new(Mutex::new(OutputState {
+            scheduled: [None; 32],
+            render_clock: 0,
             content: Content::Silence,
             generation: 1,
         }));
@@ -216,6 +261,7 @@ impl PlaybackHandle {
                 position_secs: 0.25,
                 speed: 1.0,
                 gain: 1.0,
+                filter: 0.0,
                 cue_gain: 0.5,
                 loop_region: Some((0.25, 1.0)),
                 playing: true,
@@ -227,6 +273,7 @@ impl PlaybackHandle {
                 position_secs: 0.5,
                 speed: 1.01,
                 gain: 1.0,
+                filter: 0.0,
                 cue_gain: 0.5,
                 loop_region: Some((0.5, 1.2)),
                 playing: true,
@@ -279,6 +326,8 @@ impl PlaybackHandle {
             arrangement: false,
         };
         state.generation = self.control.advance();
+        state.scheduled.fill(None);
+        state.render_clock = self.control.last_clock_frame();
         self.control.start((start_secs * 1000.0) as u64);
         Ok(())
     }
@@ -307,6 +356,8 @@ impl PlaybackHandle {
                 arrangement: true,
             };
             state.generation = self.control.advance();
+            state.scheduled.fill(None);
+            state.render_clock = self.control.last_clock_frame();
         }
         Ok(())
     }
@@ -337,6 +388,8 @@ impl PlaybackHandle {
             arrangement: true,
         };
         state.generation = self.control.advance();
+        state.scheduled.fill(None);
+        state.render_clock = self.control.last_clock_frame();
         self.control.start((position * 1000.0) as u64);
         Ok(())
     }
@@ -348,15 +401,106 @@ impl PlaybackHandle {
         }
     }
     /// Gain-only changes keep source cursors, queued frames and clock generation intact.
+    pub fn scheduled_count(&self) -> usize {
+        self.state
+            .lock()
+            .map(|s| s.scheduled.iter().flatten().count())
+            .unwrap_or(0)
+    }
+    pub(crate) fn queue_seek(
+        &self,
+        deck_id: &str,
+        master_id: &str,
+        source_bpm: f64,
+        grid: u32,
+        position: f64,
+    ) -> Result<u64, String> {
+        self.ready()?;
+        let mut state = self.state.lock().map_err(|_| "Audio state lock failed")?;
+        let Content::Decks(decks) = &state.content else {
+            return Err("Start the decks before queuing a cue".into());
+        };
+        let target = decks
+            .iter()
+            .find(|d| d.id == deck_id && d.playing)
+            .ok_or("Target deck is not playing")?;
+        if !position.is_finite()
+            || position < 0.0
+            || position >= target.left.len().min(target.right.len()) as f64 / RATE as f64
+        {
+            return Err("Cue is outside the loaded track".into());
+        }
+        if target
+            .loop_region
+            .is_some_and(|(a, b)| position < a || position >= b)
+        {
+            return Err("Clear the loop before queuing a cue outside it".into());
+        }
+        let master = decks
+            .iter()
+            .find(|d| d.id == master_id && d.playing)
+            .ok_or("Start the selected master deck first")?;
+        let delay = super::performance_dsp::beat_delay_frames(
+            master.position_secs,
+            master.speed,
+            source_bpm,
+            grid,
+        )?;
+        let wait_secs = delay as f64 / RATE as f64;
+        if master
+            .loop_region
+            .is_some_and(|(_, end)| master.position_secs + wait_secs * master.speed > end + 1e-9)
+        {
+            return Err("Choose a nearer beat grid before the master loop wraps".into());
+        }
+        for deck in [master, target] {
+            if deck.loop_region.is_none()
+                && deck.position_secs + wait_secs * deck.speed
+                    >= deck.left.len().min(deck.right.len()) as f64 / RATE as f64
+            {
+                return Err("A deck ends before the selected beat boundary".into());
+            }
+        }
+        let event = ScheduledSeek {
+            generation: state.generation,
+            at_frame: state.render_clock + 1 + delay,
+            deck: if deck_id == "A" { 0 } else { 1 },
+            position,
+        };
+        let slot = state
+            .scheduled
+            .iter_mut()
+            .find(|slot| slot.is_none())
+            .ok_or("Beat queue is full (32 actions); wait or stop playback")?;
+        *slot = Some(event);
+        Ok(event.at_frame)
+    }
     pub(crate) fn update_deck_gains(&self, incoming: &[PlayingDeck]) -> Result<bool, String> {
         self.ready()?;
-        let mut state=self.state.lock().map_err(|_| "Audio state lock failed")?;
-        let Content::Decks(current)=&mut state.content else {return Ok(false);};
-        if current.len()!=incoming.len() || !current.iter().all(|deck| incoming.iter().any(|next|
-            deck.id==next.id && deck.playing==next.playing && Arc::ptr_eq(&deck.left,&next.left) && Arc::ptr_eq(&deck.right,&next.right))) {return Ok(false);}
+        let mut state = self.state.lock().map_err(|_| "Audio state lock failed")?;
+        let Content::Decks(current) = &mut state.content else {
+            return Ok(false);
+        };
+        if current.len() != incoming.len()
+            || !current.iter().all(|deck| {
+                incoming.iter().any(|next| {
+                    deck.id == next.id
+                        && deck.playing == next.playing
+                        && Arc::ptr_eq(&deck.left, &next.left)
+                        && Arc::ptr_eq(&deck.right, &next.right)
+                })
+            })
+        {
+            return Ok(false);
+        }
         for deck in current {
-            let next=incoming.iter().find(|next| next.id==deck.id).ok_or("Deck gain source missing")?;
-            deck.gain=next.gain; deck.cue_gain=next.cue_gain;
+            let next = incoming
+                .iter()
+                .find(|next| next.id == deck.id)
+                .ok_or("Deck gain source missing")?;
+            deck.gain = next.gain;
+            deck.cue_gain = next.cue_gain;
+            deck.filter = next.filter;
         }
         Ok(true)
     }
@@ -367,6 +511,8 @@ impl PlaybackHandle {
         self.pending_start.fetch_add(1, Ordering::AcqRel);
         state.content = Content::Decks(decks);
         state.generation = self.control.advance();
+        state.scheduled.fill(None);
+        state.render_clock = self.control.last_clock_frame();
         if active {
             self.control.start(0);
         } else {
@@ -423,6 +569,8 @@ impl PlaybackHandle {
             self.pending_start.fetch_add(1, Ordering::AcqRel);
             state.content = Content::Silence;
             state.generation = self.control.advance();
+            state.scheduled.fill(None);
+            state.render_clock = self.control.last_clock_frame();
             self.control.stop();
         }
     }
@@ -444,6 +592,8 @@ impl PlaybackHandle {
                 *frame =
                     ((ms as f64 / 1000.0 - *start_secs).max(0.0) * RATE as f64).round() as usize;
                 state.generation = self.control.advance();
+                state.scheduled.fill(None);
+                state.render_clock = self.control.last_clock_frame();
                 self.control.position_ms.store(ms, Ordering::Release);
             }
         }
@@ -522,6 +672,8 @@ mod tests {
     fn headless() -> PlaybackHandle {
         PlaybackHandle {
             state: Arc::new(Mutex::new(OutputState {
+                scheduled: [None; 32],
+                render_clock: 0,
                 content: Content::Silence,
                 generation: 1,
             })),
@@ -556,20 +708,118 @@ mod tests {
     }
     #[test]
     fn changing_crossfader_and_cue_gain_does_not_rewind_or_restart_the_deck() {
-        let playback=headless(); let audio=Arc::new(vec![0.2;48000]);
-        let original=PlayingDeck{id:"A".into(),left:audio.clone(),right:audio,position_secs:0.5,speed:1.0,gain:1.0,cue_gain:0.0,loop_region:None,playing:true};
+        let playback = headless();
+        let audio = Arc::new(vec![0.2; 48000]);
+        let original = PlayingDeck {
+            id: "A".into(),
+            left: audio.clone(),
+            right: audio,
+            position_secs: 0.5,
+            speed: 1.0,
+            gain: 1.0,
+            filter: 0.0,
+            cue_gain: 0.0,
+            loop_region: None,
+            playing: true,
+        };
         playback.play_decks(vec![original.clone()]).unwrap();
-        let generation=playback.control.generation.load(Ordering::Acquire);
-        let mut update=original;update.position_secs=0.1;update.gain=0.25;update.cue_gain=0.5;
+        let generation = playback.control.generation.load(Ordering::Acquire);
+        let mut update = original;
+        update.position_secs = 0.1;
+        update.gain = 0.25;
+        update.cue_gain = 0.5;
         assert!(playback.update_deck_gains(&[update]).unwrap());
-        assert_eq!(playback.control.generation.load(Ordering::Acquire),generation);
-        let state=playback.state.lock().unwrap();
-        let Content::Decks(decks)=&state.content else {panic!("Decks disappeared")};
-        assert_eq!(decks[0].position_secs,0.5);assert_eq!(decks[0].gain,0.25);assert_eq!(decks[0].cue_gain,0.5);
+        assert_eq!(
+            playback.control.generation.load(Ordering::Acquire),
+            generation
+        );
+        let state = playback.state.lock().unwrap();
+        let Content::Decks(decks) = &state.content else {
+            panic!("Decks disappeared")
+        };
+        assert_eq!(decks[0].position_secs, 0.5);
+        assert_eq!(decks[0].gain, 0.25);
+        assert_eq!(decks[0].cue_gain, 0.5);
+    }
+    fn scheduled_fixture() -> PlaybackHandle {
+        let handle = headless();
+        let source = Arc::new(vec![0.2; 48000 * 4]);
+        handle
+            .play_decks(vec![PlayingDeck {
+                id: "A".into(),
+                left: source.clone(),
+                right: source,
+                position_secs: 0.25,
+                speed: 1.0,
+                gain: 1.0,
+                filter: 0.0,
+                cue_gain: 1.0,
+                loop_region: None,
+                playing: true,
+            }])
+            .unwrap();
+        handle
+    }
+    #[test]
+    fn scheduled_cue_executes_on_the_exact_source_grid_sample() {
+        let handle = scheduled_fixture();
+        let due = handle.queue_seek("A", "A", 120.0, 1, 1.0).unwrap();
+        assert_eq!(due, 12001);
+        let mut cursor = RenderCursor::new(handle.state.clone(), handle.control.clone());
+        let stop = AtomicBool::new(false);
+        for _ in 0..12000 {
+            let frame = cursor.next_frame(&stop);
+            assert!(frame.deck_positions[0] < 0.51);
+        }
+        let frame = cursor.next_frame(&stop);
+        assert_eq!(frame.engine_frame, due);
+        assert!((frame.deck_positions[0] - (1.0 + 1.0 / 48000.0)).abs() < 1e-10);
+    }
+    #[test]
+    fn stop_clears_pending_beats_and_queue_capacity_is_bounded() {
+        let handle = scheduled_fixture();
+        for _ in 0..32 {
+            handle.queue_seek("A", "A", 120.0, 4, 1.0).unwrap();
+        }
+        assert!(handle.queue_seek("A", "A", 120.0, 4, 1.0).is_err());
+        handle.stop();
+        assert_eq!(handle.scheduled_count(), 0);
+    }
+    #[test]
+    fn queuing_after_prefetch_keeps_the_same_future_beat_boundary() {
+        let handle = scheduled_fixture();
+        let mut cursor = RenderCursor::new(handle.state.clone(), handle.control.clone());
+        cursor.next_frame(&AtomicBool::new(false));
+        assert_eq!(handle.queue_seek("A", "A", 120.0, 1, 1.0).unwrap(), 12001);
+    }
+    #[test]
+    fn invalid_cues_and_unavailable_master_do_not_enter_the_queue() {
+        let handle = scheduled_fixture();
+        assert!(handle.queue_seek("A", "B", 120.0, 1, 1.0).is_err());
+        assert!(handle.queue_seek("A", "A", 120.0, 1, f64::NAN).is_err());
+        assert!(handle.queue_seek("A", "A", 120.0, 1, 4.0).is_err());
+        assert!(handle.queue_seek("A", "A", 120.0, 16, 1.0).is_err());
+        assert_eq!(handle.scheduled_count(), 0);
+    }
+    #[test]
+    fn cues_outside_the_active_loop_and_master_wrap_are_rejected() {
+        let handle = scheduled_fixture();
+        {
+            let mut state = handle.state.lock().unwrap();
+            let Content::Decks(decks) = &mut state.content else {
+                panic!()
+            };
+            decks[0].loop_region = Some((0.0, 0.4));
+        }
+        assert!(handle.queue_seek("A", "A", 120.0, 1, 1.0).is_err());
+        assert!(handle.queue_seek("A", "A", 120.0, 1, 0.1).is_err());
+        assert_eq!(handle.scheduled_count(), 0);
     }
     #[test]
     fn final_silent_sample_is_counted_in_the_consumed_source_clock() {
         let state = Arc::new(Mutex::new(OutputState {
+            scheduled: [None; 32],
+            render_clock: 0,
             generation: 1,
             content: Content::Samples {
                 data: Arc::new(vec![0.0; 4]),
@@ -591,6 +841,8 @@ mod tests {
     #[test]
     fn source_change_discards_prefetch_and_continues_the_last_consumed_clock() {
         let state = Arc::new(Mutex::new(OutputState {
+            scheduled: [None; 32],
+            render_clock: 0,
             generation: 1,
             content: Content::Samples {
                 data: Arc::new(vec![0.0; 1024]),
@@ -622,6 +874,8 @@ mod tests {
     #[test]
     fn deck_loop_keeps_playing_past_source_end() {
         let state = Arc::new(Mutex::new(OutputState {
+            scheduled: [None; 32],
+            render_clock: 0,
             generation: 1,
             content: Content::Decks(vec![PlayingDeck {
                 id: "A".into(),
@@ -630,6 +884,7 @@ mod tests {
                 position_secs: 0.0,
                 speed: 1.0,
                 gain: 1.0,
+                filter: 0.0,
                 cue_gain: 0.0,
                 loop_region: Some((0.0, 8.0 / RATE as f64)),
                 playing: true,
@@ -637,16 +892,22 @@ mod tests {
         }));
         let control = Arc::new(OutputControl::new());
         let mut renderer = RenderCursor::new(state, control);
-        for _ in 0..1000 {
+        for index in 0..20480 {
             let frame = renderer.next_frame(&AtomicBool::new(false));
-            assert_eq!(frame.left, 0.25);
-            assert_eq!(frame.right, 0.5);
+            if index >= 960 {
+                assert_eq!(frame.left, 0.25);
+                assert_eq!(frame.right, 0.5);
+            } else {
+                assert!(frame.left >= 0.0 && frame.left <= 0.25);
+            }
             assert!(!frame.finished);
         }
     }
     #[test]
     fn seek_discards_worker_prefetch() {
         let state = Arc::new(Mutex::new(OutputState {
+            scheduled: [None; 32],
+            render_clock: 0,
             generation: 1,
             content: Content::Samples {
                 data: Arc::new(vec![0.2; 1024]),
@@ -678,6 +939,8 @@ mod tests {
     #[test]
     fn render_cursor_does_not_advance_the_audible_clock() {
         let state = Arc::new(Mutex::new(OutputState {
+            scheduled: [None; 32],
+            render_clock: 0,
             generation: 1,
             content: Content::Samples {
                 data: Arc::new(vec![0.2; 1024]),

@@ -91,10 +91,15 @@ fn apply_deck_playback(
     }
 }
 
-fn apply_deck_gains(state: &State<AppState>, mix: Option<Vec<crate::audio::PlayingDeck>>) -> Result<(), String> {
-    if let Some(mix)=mix {
-        if state.playback.update_deck_gains(&mix)? { return Ok(()); }
-        return apply_deck_playback(state,Some(mix));
+fn apply_deck_gains(
+    state: &State<AppState>,
+    mix: Option<Vec<crate::audio::PlayingDeck>>,
+) -> Result<(), String> {
+    if let Some(mix) = mix {
+        if state.playback.update_deck_gains(&mix)? {
+            return Ok(());
+        }
+        return apply_deck_playback(state, Some(mix));
     }
     Ok(())
 }
@@ -1140,6 +1145,7 @@ pub async fn playback_play_arrangement(
 #[derive(Serialize)]
 pub struct DeckPerformanceStatus {
     project_id: String,
+    scheduled_count: usize,
     playing: bool,
     snapshot: Option<crate::audio::output::PerformanceSnapshot>,
     decks: Vec<DeckState>,
@@ -1158,6 +1164,7 @@ pub fn deck_performance_status(state: State<AppState>) -> Result<DeckPerformance
     }
     Ok(DeckPerformanceStatus {
         project_id: project.id.clone(),
+        scheduled_count: state.playback.scheduled_count(),
         playing,
         snapshot,
         decks: project.decks.clone(),
@@ -2938,6 +2945,58 @@ pub fn deck_load_track(
     drop(project);
     apply_deck_playback(&state, mix)?;
     Ok(out)
+}
+
+#[tauri::command]
+pub fn deck_dsp_update(
+    state: State<AppState>,
+    deck_id: String,
+    gain_db: Option<f64>,
+    filter: Option<f64>,
+) -> Result<DeckState, String> {
+    if gain_db.is_some_and(|v| !v.is_finite() || !(-60.0..=12.0).contains(&v))
+        || filter.is_some_and(|v| !v.is_finite() || !(-1.0..=1.0).contains(&v))
+    {
+        return Err("Invalid live deck DSP value".into());
+    }
+    let (deck, mix) = {
+        let mut project = state.project.lock().map_err(|_| "lock")?;
+        sync_deck_positions(&state, &mut project);
+        let deck = find_deck_mut(&mut project, &deck_id)?;
+        if let Some(v) = gain_db {
+            deck.gain_db = v;
+        }
+        if let Some(v) = filter {
+            deck.filter = v;
+        }
+        let deck = deck.clone();
+        (deck, prepare_deck_playback(&project)?)
+    };
+    apply_deck_gains(&state, mix)?;
+    Ok(deck)
+}
+#[tauri::command]
+pub fn deck_queue_cue(
+    state: State<AppState>,
+    deck_id: String,
+    cue_id: String,
+    grid_beats: u32,
+) -> Result<u64, String> {
+    let project = state.project.lock().map_err(|_| "lock")?;
+    let deck = find_deck(&project, &deck_id)?;
+    let cue = deck
+        .hot_cues
+        .iter()
+        .find(|cue| cue.id == cue_id)
+        .ok_or("Cue not found")?;
+    let master = find_deck(&project, &project.deck_sync.master_deck_id)?;
+    state.playback.queue_seek(
+        &deck.id,
+        &master.id,
+        master.tempo_bpm / master.tempo_multiplier.max(0.01),
+        grid_beats,
+        cue.position_secs,
+    )
 }
 
 #[tauri::command]

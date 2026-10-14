@@ -1011,8 +1011,11 @@ export async function deckSetHeadphoneCue(deckId: string, enabled: boolean) {
 }
 
 export interface DeckPerformanceStatus {
-  project_id: string; playing: boolean;
+  project_id: string; scheduled_count: number; playing: boolean;
   snapshot: { generation: number; engine_frame: number; position_ms: number; deck_positions: [number,number]; deck_mask: number; main_peak: number; cue_peak: number } | null;
   decks: DeckState[];
 }
 export const deckPerformanceStatus = () => invoke<DeckPerformanceStatus>('deck_performance_status');
+
+export const deckDspUpdate = (deckId: string, patch: {gainDb?:number;filter?:number}) => invoke<DeckState>('deck_dsp_update',{deckId,gainDb:patch.gainDb ?? null,filter:patch.filter ?? null});
+export const deckQueueCue = (deckId: string, cueId: string, gridBeats: number) => invoke<number>('deck_queue_cue',{deckId,cueId,gridBeats});

@@ -154,6 +154,8 @@ pub fn run() {
             commands::deck_load_track,
             commands::deck_set_playing,
             commands::deck_set_headphone_cue,
+            commands::deck_dsp_update,
+            commands::deck_queue_cue,
             commands::deck_performance_status,
             commands::deck_seek_position,
             commands::deck_turntable_nudge,

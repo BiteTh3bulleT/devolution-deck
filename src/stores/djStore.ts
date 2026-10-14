@@ -14,6 +14,17 @@ import type {
 } from "../types";
 import { v4 } from "../utils/uuid";
 import { useProjectStore } from "./projectStore";
+import { parameterQueue } from "../utils/parameterQueue";
+
+const sendDsp = parameterQueue<{gainDb?:number;filter?:number}>(async (key, patch) => {
+  const [projectId, deckId] = JSON.parse(key) as [string,string];
+  if (useProjectStore.getState().project?.id !== projectId) return;
+  const deck = await api.deckDspUpdate(deckId, patch);
+  const project = useProjectStore.getState().project;
+  if (project?.id === projectId) useProjectStore.getState().setProject({
+    ...project, decks: project.decks.map(current => current.id === deckId ? {...current,gain_db:deck.gain_db,filter:deck.filter} : current),
+  });
+});
 
 function ensureProject() {
   const project = useProjectStore.getState().project;
@@ -51,7 +62,8 @@ interface DjStoreState {
   turntableScratch: (deckId: string, deltaSecs: number, friction?: number) => Promise<void>;
   configureTurntable: (deckId: string, vinylMode: boolean, jogSensitivity: number) => Promise<void>;
   addHotCue: (deckId: string, positionSecs: number) => Promise<void>;
-  triggerHotCue: (deckId: string, cueId: string) => Promise<void>;
+  updateDeckDsp: (deckId: string, patch: {gainDb?:number;filter?:number}) => Promise<void>;
+  triggerHotCue: (deckId: string, cueId: string, gridBeats?: number) => Promise<void>;
   removeHotCue: (deckId: string, cueId: string) => Promise<void>;
   setDeckLoop: (deckId: string, startSecs: number, endSecs: number, quantizeBeats: number) => Promise<void>;
   clearDeckLoop: (deckId: string) => Promise<void>;
@@ -189,8 +201,10 @@ export const useDjStore = create<DjStoreState>((set) => ({
     await reloadProject();
   },
 
-  async triggerHotCue(deckId, cueId) {
-    await api.deckHotCueTrigger(deckId, cueId);
+  async updateDeckDsp(deckId, patch) { await sendDsp(JSON.stringify([ensureProject().id,deckId]),patch); },
+  async triggerHotCue(deckId, cueId, gridBeats = 0) {
+    if (gridBeats > 0) await api.deckQueueCue(deckId,cueId,gridBeats);
+    else await api.deckHotCueTrigger(deckId, cueId);
     await reloadProject();
   },
 

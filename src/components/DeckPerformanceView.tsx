@@ -17,6 +17,8 @@ async function runWithError(action: () => Promise<unknown>, onError: (message: s
 }
 
 export function DeckPerformanceView() {
+  const [touchLayout, setTouchLayout] = useState(true);
+  const updateDeckDsp = useDjStore(state => state.updateDeckDsp);
   const project = useProjectStore((state) => state.project);
   const [telemetry, setTelemetry] = useState<api.DeckPerformanceStatus | null>(null);
   const [clockError, setClockError] = useState<string | null>(null);
@@ -125,10 +127,12 @@ export function DeckPerformanceView() {
   const bindingByTrack = new Map(project.crossfader.track_bindings.map((entry) => [entry.track_id, entry.side]));
 
   return (
-    <div className="deck-decks flex-1 min-h-0 overflow-auto p-4">
+    <div className={`deck-decks ${touchLayout ? "touch-performance" : ""} flex-1 min-h-0 overflow-auto p-4`}>
       <div className="max-w-[1500px] mx-auto space-y-4">
+        <button type="button" aria-pressed={touchLayout} onClick={()=>setTouchLayout(!touchLayout)} className="touch-layout-toggle">{touchLayout ? 'Touch layout • show studio panels' : 'Enable touch layout'}</button>
         <section className="deck-lcd flex flex-wrap items-center gap-4 text-xs" aria-label="Live audio clock and bus meters">
           <span>Audio clock {((currentTelemetry?.snapshot?.engine_frame ?? 0) / 48000).toFixed(3)} s</span>
+          <span>Queued cues {currentTelemetry?.scheduled_count ?? 0}</span>
           <span>{currentTelemetry?.playing ? "Output running" : "Output stopped"}</span>
           <label>Main peak <meter aria-label="Main output peak" min={0} max={1} value={currentTelemetry?.snapshot?.main_peak ?? 0} /></label>
           <label>Cue peak <meter aria-label="Headphone cue peak" min={0} max={1} value={currentTelemetry?.snapshot?.cue_peak ?? 0} /></label>
@@ -290,7 +294,7 @@ export function DeckPerformanceView() {
           </div>
         </section>
 
-        <div className="grid xl:grid-cols-2 gap-4">
+        <div className="deck-platter-grid grid md:grid-cols-2 gap-5">
           <DeckChannelCard
             deck={deckA}
             loadedItem={loadedA}
@@ -309,7 +313,8 @@ export function DeckPerformanceView() {
             }
             onClearLoop={(deckId) => runWithError(() => clearDeckLoop(deckId), setError)}
             onAddHotCue={(deckId, positionSecs) => runWithError(() => addHotCue(deckId, positionSecs), setError)}
-            onTriggerCue={(deckId, cueId) => runWithError(() => triggerHotCue(deckId, cueId), setError)}
+            onDspUpdate={(id,patch) => runWithError(()=>updateDeckDsp(id,patch),setError)}
+            onTriggerCue={(deckId, cueId, grid) => runWithError(() => triggerHotCue(deckId, cueId, grid), setError)}
             onRemoveCue={(deckId, cueId) => runWithError(() => removeHotCue(deckId, cueId), setError)}
           />
 
@@ -331,7 +336,8 @@ export function DeckPerformanceView() {
             }
             onClearLoop={(deckId) => runWithError(() => clearDeckLoop(deckId), setError)}
             onAddHotCue={(deckId, positionSecs) => runWithError(() => addHotCue(deckId, positionSecs), setError)}
-            onTriggerCue={(deckId, cueId) => runWithError(() => triggerHotCue(deckId, cueId), setError)}
+            onDspUpdate={(id,patch) => runWithError(()=>updateDeckDsp(id,patch),setError)}
+            onTriggerCue={(deckId, cueId, grid) => runWithError(() => triggerHotCue(deckId, cueId, grid), setError)}
             onRemoveCue={(deckId, cueId) => runWithError(() => removeHotCue(deckId, cueId), setError)}
           />
         </div>

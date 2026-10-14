@@ -1,4 +1,4 @@
-import { JogDial } from "../hardware/HardwareControls";
+import { HardwareKnob, JogDial } from "../hardware/HardwareControls";
 import { useMemo, useState } from "react";
 import type { DeckState, LibraryItem } from "../../types";
 
@@ -14,7 +14,8 @@ interface DeckChannelCardProps {
   onSetLoop: (deckId: string, startSecs: number, endSecs: number, quantizeBeats: number) => Promise<void>;
   onClearLoop: (deckId: string) => Promise<void>;
   onAddHotCue: (deckId: string, positionSecs: number) => Promise<void>;
-  onTriggerCue: (deckId: string, cueId: string) => Promise<void>;
+  onDspUpdate: (deckId: string, patch: {gainDb?:number;filter?:number}) => Promise<void>;
+  onTriggerCue: (deckId: string, cueId: string, gridBeats?: number) => Promise<void>;
   onRemoveCue: (deckId: string, cueId: string) => Promise<void>;
 }
 
@@ -43,9 +44,11 @@ export function DeckChannelCard({
   onSetLoop,
   onClearLoop,
   onAddHotCue,
+  onDspUpdate,
   onTriggerCue,
   onRemoveCue,
 }: DeckChannelCardProps) {
+  const [cueGrid, setCueGrid] = useState(1);
   const [loopStart, setLoopStart] = useState(deck.loop_state?.start_secs ?? 0);
   const [loopEnd, setLoopEnd] = useState(deck.loop_state?.end_secs ?? Math.max(1, deck.position_secs + 8));
   const [scratchSecs, setScratchSecs] = useState(0.05);
@@ -88,6 +91,10 @@ export function DeckChannelCard({
       <div className="deck-jog-stage">
         <JogDial label={`Jog Deck ${deck.id}`} position={deck.position_secs} vinylMode={deck.vinyl_mode} disabled={!deck.loaded_track || busy} onScratch={delta => void onScratch(deck.id, delta)} onNudge={beats => void onNudge(deck.id, beats)} />
         <div className="deck-lcd"><small>Deck {deck.id} / elapsed</small><strong>{Math.floor(deck.position_secs / 60).toString().padStart(2,"0")}:{(deck.position_secs % 60).toFixed(1).padStart(4,"0")}</strong><small>{deck.playing ? "Playing" : "Standby"} · {deck.loop_state?.enabled ? "Loop" : "Free"}</small></div>
+      </div>
+      <div className="deck-live-dsp grid grid-cols-2 gap-4">
+        <HardwareKnob label={`Deck ${deck.id} gain`} value={deck.gain_db} min={-60} max={12} step={0.1} unit="dB" resetValue={0} onChange={gainDb => void onDspUpdate(deck.id,{gainDb})} />
+        <HardwareKnob label={`Deck ${deck.id} filter`} value={deck.filter} min={-1} max={1} step={0.01} unit="LP / HP" resetValue={0} onChange={filter => void onDspUpdate(deck.id,{filter})} />
       </div>
       <div className="grid grid-cols-4 gap-2 text-[11px]">
         <div className="rounded border border-deck-border bg-deck-surface p-2">
@@ -209,12 +216,16 @@ export function DeckChannelCard({
 
       <div className="space-y-1.5">
         <p className="text-[10px] uppercase tracking-wide text-deck-text-muted">Hot Cues</p>
+        <label className="block text-xs">Cue launch grid<select aria-label={`Deck ${deck.id} cue launch grid`} value={cueGrid} onChange={e=>setCueGrid(Number(e.target.value))} className="w-full mt-2">
+          <option value={0}>Immediate / show bindings</option><option value={1}>Next beat / audio only</option><option value={4}>Next bar / audio only</option><option value={8}>Next 2 bars / audio only</option>
+        </select></label>
         <div className="grid grid-cols-4 gap-1.5">
           {deck.hot_cues.map((cue) => (
             <div key={cue.id} className="rounded border border-deck-border bg-deck-surface p-1">
               <button
                 type="button"
-                onClick={() => void onTriggerCue(deck.id, cue.id)}
+                disabled={cueGrid>0 && !deck.playing}
+                onClick={() => void onTriggerCue(deck.id, cue.id, cueGrid)}
                 className="w-full text-left text-[10px] text-deck-text truncate"
               >
                 {cue.label} · {fmt(cue.position_secs, 2)}
