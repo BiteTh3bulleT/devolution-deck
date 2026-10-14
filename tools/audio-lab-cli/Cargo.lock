@@ -106,7 +106,7 @@ checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
 name = "audio-lab-cli"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "devolution-deck",
  "serde_json",
@@ -724,7 +724,7 @@ dependencies = [
 
 [[package]]
 name = "devolution-deck"
-version = "0.7.0"
+version = "0.8.0"
 dependencies = [
  "base64 0.21.7",
  "cpal",

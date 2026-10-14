@@ -42,7 +42,14 @@ struct ScheduledSeek {
     deck: usize,
     position: f64,
 }
+#[derive(Clone, Copy)]
+struct ScratchGesture {
+    token: u64,
+    speed: f64,
+    updated: std::time::Instant,
+}
 struct OutputState {
+    scratch: [Option<ScratchGesture>; 2],
     scheduled: [Option<ScheduledSeek>; 32],
     render_clock: u64,
     content: Content,
@@ -61,6 +68,7 @@ struct RenderCursor {
     index: usize,
     cached_generation: u64,
     clock_frame: u64,
+    velocity: [super::scratch::SpeedRamp; 2],
     dsp: [super::performance_dsp::DeckDsp; 2],
 }
 impl RenderCursor {
@@ -72,6 +80,7 @@ impl RenderCursor {
             index: BLOCK,
             cached_generation: 0,
             clock_frame: 0,
+            velocity: [super::scratch::SpeedRamp::default(); 2],
             dsp: [super::performance_dsp::DeckDsp::default(); 2],
         }
     }
@@ -105,12 +114,33 @@ impl RenderCursor {
         if self.cached_generation != state.generation {
             self.clock_frame = self.control.last_clock_frame();
             self.dsp = [super::performance_dsp::DeckDsp::default(); 2];
+            if let Content::Decks(decks) = &state.content {
+                for deck in decks {
+                    self.velocity[if deck.id == "A" { 0 } else { 1 }].reset(deck.speed);
+                }
+            }
         }
         self.cached_generation = state.generation;
+        for gesture in &mut state.scratch {
+            if gesture.is_some_and(|g| g.updated.elapsed().as_millis() > 400) {
+                *gesture = None;
+            }
+        }
+        let held = state.scratch;
         if let Content::Decks(decks) = &state.content {
             for deck in decks {
                 let index = if deck.id == "A" { 0 } else { 1 };
                 self.dsp[index].target(deck.gain, deck.cue_gain, deck.filter);
+                let speed = held[index]
+                    .map(|g| {
+                        if g.updated.elapsed().as_millis() > 80 {
+                            0.0
+                        } else {
+                            g.speed
+                        }
+                    })
+                    .unwrap_or(deck.speed);
+                self.velocity[index].target(speed);
             }
         }
         for frame in &mut self.block {
@@ -171,9 +201,20 @@ impl RenderCursor {
                     let mut position = 0.0f64;
                     for deck in decks.iter_mut().filter(|d| d.playing) {
                         if let Some((a, b)) = deck.loop_region {
-                            if deck.position_secs >= b {
+                            if deck.position_secs >= b
+                                || (held[if deck.id == "A" { 0 } else { 1 }].is_some()
+                                    && deck.position_secs < a)
+                            {
                                 deck.position_secs = a + (deck.position_secs - a).rem_euclid(b - a);
                             }
+                        }
+                        let index = if deck.id == "A" { 0 } else { 1 };
+                        let speed = self.velocity[index].next();
+                        let len = deck.left.len().min(deck.right.len());
+                        if held[index].is_some() && len > 0 {
+                            deck.position_secs = deck
+                                .position_secs
+                                .clamp(0.0, (len - 1) as f64 / RATE as f64);
                         }
                         let f = deck.position_secs * RATE as f64;
                         let i = f.floor() as usize;
@@ -189,12 +230,33 @@ impl RenderCursor {
                             deck.right[i] * (1.0 - t) + deck.right[j] * t,
                         ];
                         let index = if deck.id == "A" { 0 } else { 1 };
-                        let (main, cue) = self.dsp[index].process(input);
+                        let boundary = (deck.position_secs <= 0.0 && speed < 0.0)
+                            || (len > 0
+                                && deck.position_secs >= (len - 1) as f64 / RATE as f64
+                                && speed > 0.0);
+                        let motion = if held[index].is_some() && boundary {
+                            0.0
+                        } else {
+                            // Follow the velocity ramp through hold and release, preserving
+                            // normal deck level even when its configured speed is below 1.
+                            (speed.abs() / deck.speed.abs().min(1.0).max(0.001)).min(1.0) as f32
+                        };
+                        let (main, cue) =
+                            self.dsp[index].process([input[0] * motion, input[1] * motion]);
                         frame.left += main[0];
                         frame.right += main[1];
                         frame.cue_left += cue[0];
                         frame.cue_right += cue[1];
-                        deck.position_secs += deck.speed / RATE as f64;
+                        let next = deck.position_secs + speed / RATE as f64;
+                        deck.position_secs = if held[index].is_some() {
+                            if let Some((a, b)) = deck.loop_region {
+                                a + (next - a).rem_euclid(b - a)
+                            } else {
+                                next.max(0.0)
+                            }
+                        } else {
+                            next.max(0.0)
+                        };
                         position = position.max(deck.position_secs);
                         active = true;
                     }
@@ -227,6 +289,7 @@ impl RenderCursor {
 impl PlaybackHandle {
     pub fn new() -> Result<Self, String> {
         let state = Arc::new(Mutex::new(OutputState {
+            scratch: [None; 2],
             scheduled: [None; 32],
             render_clock: 0,
             content: Content::Silence,
@@ -327,6 +390,7 @@ impl PlaybackHandle {
         };
         state.generation = self.control.advance();
         state.scheduled.fill(None);
+        state.scratch.fill(None);
         state.render_clock = self.control.last_clock_frame();
         self.control.start((start_secs * 1000.0) as u64);
         Ok(())
@@ -357,6 +421,7 @@ impl PlaybackHandle {
             };
             state.generation = self.control.advance();
             state.scheduled.fill(None);
+            state.scratch.fill(None);
             state.render_clock = self.control.last_clock_frame();
         }
         Ok(())
@@ -389,6 +454,7 @@ impl PlaybackHandle {
         };
         state.generation = self.control.advance();
         state.scheduled.fill(None);
+        state.scratch.fill(None);
         state.render_clock = self.control.last_clock_frame();
         self.control.start((position * 1000.0) as u64);
         Ok(())
@@ -407,6 +473,54 @@ impl PlaybackHandle {
             .map(|s| s.scheduled.iter().flatten().count())
             .unwrap_or(0)
     }
+    pub(crate) fn scratch_gesture(
+        &self,
+        deck_id: &str,
+        token: u64,
+        action: &str,
+        speed: f64,
+    ) -> Result<(), String> {
+        if !speed.is_finite() || speed.abs() > 8.0 {
+            return Err("Scratch speed must be finite and within -8 to 8".into());
+        }
+        let index = match deck_id {
+            "A" => 0,
+            "B" => 1,
+            _ => return Err("Unknown deck".into()),
+        };
+        self.ready()?;
+        let mut state = self.state.lock().map_err(|_| "Audio lock")?;
+        if action == "end" {
+            if state.scratch[index].is_some_and(|g| g.token == token) {
+                state.scratch[index] = None;
+            }
+            return Ok(());
+        }
+        if action == "update" && !state.scratch[index].is_some_and(|g| g.token == token) {
+            return Ok(());
+        }
+        if action == "begin" && state.scratch[index].is_some_and(|g| g.token > token) {
+            return Ok(());
+        }
+        if action != "begin" && action != "update" {
+            return Err("Unknown scratch action".into());
+        }
+        let Content::Decks(decks) = &state.content else {
+            return Err("Start the deck before touching the platter".into());
+        };
+        if !decks.iter().any(|d| d.id == deck_id && d.playing) {
+            return Err("Start the deck before touching the platter".into());
+        }
+        if action == "begin" {
+            state.scheduled.fill(None);
+        }
+        state.scratch[index] = Some(ScratchGesture {
+            token,
+            speed,
+            updated: std::time::Instant::now(),
+        });
+        Ok(())
+    }
     pub(crate) fn queue_seek(
         &self,
         deck_id: &str,
@@ -417,6 +531,9 @@ impl PlaybackHandle {
     ) -> Result<u64, String> {
         self.ready()?;
         let mut state = self.state.lock().map_err(|_| "Audio state lock failed")?;
+        if state.scratch.iter().any(Option::is_some) {
+            return Err("Release the platters before queuing beat cues".into());
+        }
         let Content::Decks(decks) = &state.content else {
             return Err("Start the decks before queuing a cue".into());
         };
@@ -512,6 +629,7 @@ impl PlaybackHandle {
         state.content = Content::Decks(decks);
         state.generation = self.control.advance();
         state.scheduled.fill(None);
+        state.scratch.fill(None);
         state.render_clock = self.control.last_clock_frame();
         if active {
             self.control.start(0);
@@ -570,6 +688,7 @@ impl PlaybackHandle {
             state.content = Content::Silence;
             state.generation = self.control.advance();
             state.scheduled.fill(None);
+            state.scratch.fill(None);
             state.render_clock = self.control.last_clock_frame();
             self.control.stop();
         }
@@ -593,6 +712,7 @@ impl PlaybackHandle {
                     ((ms as f64 / 1000.0 - *start_secs).max(0.0) * RATE as f64).round() as usize;
                 state.generation = self.control.advance();
                 state.scheduled.fill(None);
+                state.scratch.fill(None);
                 state.render_clock = self.control.last_clock_frame();
                 self.control.position_ms.store(ms, Ordering::Release);
             }
@@ -672,6 +792,7 @@ mod tests {
     fn headless() -> PlaybackHandle {
         PlaybackHandle {
             state: Arc::new(Mutex::new(OutputState {
+                scratch: [None; 2],
                 scheduled: [None; 32],
                 render_clock: 0,
                 content: Content::Silence,
@@ -761,6 +882,100 @@ mod tests {
         handle
     }
     #[test]
+    fn scratch_reverses_and_releases_without_flushing_generation() {
+        let handle = scheduled_fixture();
+        let generation = handle.state.lock().unwrap().generation;
+        handle.scratch_gesture("A", 1, "begin", 0.0).unwrap();
+        handle.scratch_gesture("A", 1, "update", -1.0).unwrap();
+        let mut cursor = RenderCursor::new(handle.state.clone(), handle.control.clone());
+        let stop = AtomicBool::new(false);
+        let mut frame = AudioFrame::default();
+        for _ in 0..2048 {
+            frame = cursor.next_frame(&stop);
+        }
+        assert!(frame.deck_positions[0] < 0.23);
+        let reverse = frame.deck_positions[0];
+        handle.scratch_gesture("A", 1, "end", 0.0).unwrap();
+        for _ in 0..2048 {
+            frame = cursor.next_frame(&stop);
+        }
+        assert!(frame.deck_positions[0] > reverse + 0.02);
+        assert_eq!(handle.state.lock().unwrap().generation, generation);
+    }
+    #[test]
+    fn stale_scratch_commands_cannot_revive_a_released_or_stopped_gesture() {
+        let handle = scheduled_fixture();
+        handle.scratch_gesture("A", 1, "begin", 0.0).unwrap();
+        handle.scratch_gesture("A", 1, "end", 0.0).unwrap();
+        handle.scratch_gesture("A", 1, "update", -2.0).unwrap();
+        assert!(handle.state.lock().unwrap().scratch[0].is_none());
+        handle.scratch_gesture("A", 2, "begin", 0.0).unwrap();
+        handle.scratch_gesture("A", 1, "end", 0.0).unwrap();
+        assert_eq!(handle.state.lock().unwrap().scratch[0].unwrap().token, 2);
+        handle.stop();
+        handle.scratch_gesture("A", 2, "update", -2.0).unwrap();
+        assert!(handle.state.lock().unwrap().scratch[0].is_none());
+    }
+    #[test]
+    fn held_scratch_is_silent_and_watchdog_returns_to_normal_playback() {
+        let handle = scheduled_fixture();
+        handle.scratch_gesture("A", 1, "begin", 0.0).unwrap();
+        let mut cursor = RenderCursor::new(handle.state.clone(), handle.control.clone());
+        let stop = AtomicBool::new(false);
+        let mut frame = AudioFrame::default();
+        for _ in 0..1024 {
+            frame = cursor.next_frame(&stop);
+        }
+        let held = frame.deck_positions[0];
+        assert!(frame.left.abs() < 1e-6);
+        {
+            let mut state = handle.state.lock().unwrap();
+            state.scratch[0].as_mut().unwrap().updated -= std::time::Duration::from_millis(500);
+        }
+        for _ in 0..1024 {
+            frame = cursor.next_frame(&stop);
+        }
+        assert!(frame.deck_positions[0] > held + 0.01);
+        assert!(handle.state.lock().unwrap().scratch[0].is_none());
+    }
+    #[test]
+    fn scratch_guards_and_reverse_source_boundary_are_bounded() {
+        let handle = scheduled_fixture();
+        assert!(handle.scratch_gesture("A", 1, "begin", f64::NAN).is_err());
+        assert!(handle.scratch_gesture("A", 1, "begin", 9.0).is_err());
+        handle.scratch_gesture("A", 1, "begin", -8.0).unwrap();
+        assert!(handle.queue_seek("A", "A", 120.0, 1, 1.0).is_err());
+        let mut cursor = RenderCursor::new(handle.state.clone(), handle.control.clone());
+        let stop = AtomicBool::new(false);
+        for _ in 0..2048 {
+            let frame = cursor.next_frame(&stop);
+            assert!(frame.deck_positions[0] >= 0.0);
+            assert!(!frame.finished);
+        }
+    }
+    #[test]
+    fn reverse_scratch_wraps_an_active_loop_at_its_start() {
+        let handle = scheduled_fixture();
+        {
+            let mut state = handle.state.lock().unwrap();
+            let Content::Decks(decks) = &mut state.content else {
+                panic!()
+            };
+            decks[0].loop_region = Some((0.0, 0.4));
+        }
+        handle.scratch_gesture("A", 1, "begin", -8.0).unwrap();
+        let mut cursor = RenderCursor::new(handle.state.clone(), handle.control.clone());
+        let stop = AtomicBool::new(false);
+        let mut wrapped = false;
+        for _ in 0..2048 {
+            let frame = cursor.next_frame(&stop);
+            let pos = frame.deck_positions[0];
+            assert!((0.0..0.4).contains(&pos));
+            wrapped |= pos > 0.35;
+        }
+        assert!(wrapped);
+    }
+    #[test]
     fn scheduled_cue_executes_on_the_exact_source_grid_sample() {
         let handle = scheduled_fixture();
         let due = handle.queue_seek("A", "A", 120.0, 1, 1.0).unwrap();
@@ -818,6 +1033,7 @@ mod tests {
     #[test]
     fn final_silent_sample_is_counted_in_the_consumed_source_clock() {
         let state = Arc::new(Mutex::new(OutputState {
+            scratch: [None; 2],
             scheduled: [None; 32],
             render_clock: 0,
             generation: 1,
@@ -841,6 +1057,7 @@ mod tests {
     #[test]
     fn source_change_discards_prefetch_and_continues_the_last_consumed_clock() {
         let state = Arc::new(Mutex::new(OutputState {
+            scratch: [None; 2],
             scheduled: [None; 32],
             render_clock: 0,
             generation: 1,
@@ -874,6 +1091,7 @@ mod tests {
     #[test]
     fn deck_loop_keeps_playing_past_source_end() {
         let state = Arc::new(Mutex::new(OutputState {
+            scratch: [None; 2],
             scheduled: [None; 32],
             render_clock: 0,
             generation: 1,
@@ -906,6 +1124,7 @@ mod tests {
     #[test]
     fn seek_discards_worker_prefetch() {
         let state = Arc::new(Mutex::new(OutputState {
+            scratch: [None; 2],
             scheduled: [None; 32],
             render_clock: 0,
             generation: 1,
@@ -939,6 +1158,7 @@ mod tests {
     #[test]
     fn render_cursor_does_not_advance_the_audible_clock() {
         let state = Arc::new(Mutex::new(OutputState {
+            scratch: [None; 2],
             scheduled: [None; 32],
             render_clock: 0,
             generation: 1,

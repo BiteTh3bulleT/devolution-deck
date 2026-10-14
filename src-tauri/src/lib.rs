@@ -160,6 +160,7 @@ pub fn run() {
             commands::deck_seek_position,
             commands::deck_turntable_nudge,
             commands::deck_turntable_scratch,
+            commands::deck_live_scratch,
             commands::deck_turntable_configure,
             commands::deck_hot_cue_set,
             commands::deck_hot_cue_trigger,

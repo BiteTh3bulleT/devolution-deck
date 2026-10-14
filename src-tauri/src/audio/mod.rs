@@ -26,3 +26,5 @@ pub use vst_host::preflight_plugin;
 pub use waveform::compute_waveform_peaks;
 #[cfg(test)]
 mod regression_tests;
+
+mod scratch;

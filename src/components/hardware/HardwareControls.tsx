@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 import knobCap from "../../assets/ui/v5/knob-cap.png";
 import knobBezel from "../../assets/ui/v5/knob-bezel.png";
-import jogDial from "../../assets/ui/v5/jog-dial.png";
 
 interface KnobProps {
   label: string; value: number; min: number; max: number; step?: number;
@@ -32,16 +31,4 @@ export function HardwareKnob({ label, value, min, max, step = 0.01, onChange, un
   </label>;
 }
 
-export function JogDial({ label, position, disabled, vinylMode, onScratch, onNudge }: { label: string; position: number; disabled: boolean; vinylMode: boolean; onScratch: (seconds: number) => void; onNudge: (beats: number) => void }) {
-  const drag = useRef<{id:number; x:number; width:number} | null>(null);
-  const [dragOffset, setDragOffset] = useState(0);
-  return <button type="button" className="hardware-jog" aria-label={label} disabled={disabled} title={`Drag then release to ${vinylMode ? "scratch" : "nudge"}; arrow keys to nudge by a quarter beat`}
-    onPointerDown={e => { if (e.button !== 0 || disabled || drag.current) return; e.currentTarget.setPointerCapture(e.pointerId); drag.current = {id:e.pointerId,x:e.clientX,width:e.currentTarget.getBoundingClientRect().width}; }}
-    onPointerMove={e => { if (drag.current?.id === e.pointerId) setDragOffset((e.clientX-drag.current.x)*190/drag.current.width); }}
-    onPointerUp={e => { if (drag.current?.id !== e.pointerId) return; const delta=(e.clientX-drag.current.x)*1.9/drag.current.width; drag.current=null; setDragOffset(0); if (Math.abs(delta)>0.01) { if (vinylMode) onScratch(delta); else onNudge(delta); } if (e.currentTarget.hasPointerCapture(e.pointerId)) e.currentTarget.releasePointerCapture(e.pointerId); }}
-    onPointerCancel={e => { if (drag.current?.id === e.pointerId) { drag.current=null; setDragOffset(0); } }} onLostPointerCapture={e => { if (drag.current?.id === e.pointerId) { drag.current=null; setDragOffset(0); } }}
-    onKeyDown={e => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); onNudge(e.key === "ArrowLeft" ? -.25 : .25); } }}>
-    <img src={jogDial} alt="" draggable={false} style={{ transform: `rotate(${position * 90 + dragOffset * 2}deg)` }} />
-    <span className="hardware-jog-hub" aria-hidden="true">DΞ</span>
-  </button>;
-}
+export { JogDial } from "./LiveJogDial";

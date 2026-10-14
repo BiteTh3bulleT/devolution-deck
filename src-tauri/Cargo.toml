@@ -1,6 +1,6 @@
 [package]
 name = "devolution-deck"
-version = "0.7.0"
+version = "0.8.0"
 description = "DEVOLUTION//DECK - Desktop DAW for DJ Devooo"
 authors = ["DevoDeck"]
 edition = "2021"

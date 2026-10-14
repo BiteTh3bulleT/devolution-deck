@@ -603,6 +603,10 @@ export async function deckTurntableNudge(deckId: string, deltaBeats: number): Pr
   return invoke<DeckState>("deck_turntable_nudge", { deckId, deltaBeats });
 }
 
+export async function deckLiveScratch(deckId:string,token:number,action:'begin'|'update'|'end',speed:number):Promise<void> {
+  return invoke('deck_live_scratch',{deckId,token,action,speed});
+}
+
 export async function deckTurntableScratch(
   deckId: string,
   deltaSecs: number,

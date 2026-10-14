@@ -1,3 +1,4 @@
+import { deckLiveScratch } from "../../api";
 import { HardwareKnob, JogDial } from "../hardware/HardwareControls";
 import { useMemo, useState } from "react";
 import type { DeckState, LibraryItem } from "../../types";
@@ -89,7 +90,7 @@ export function DeckChannelCard({
         Headphone cue {deck.headphone_cue ? 'ON' : 'OFF'}
       </button>
       <div className="deck-jog-stage">
-        <JogDial label={`Jog Deck ${deck.id}`} position={deck.position_secs} vinylMode={deck.vinyl_mode} disabled={!deck.loaded_track || busy} onScratch={delta => void onScratch(deck.id, delta)} onNudge={beats => void onNudge(deck.id, beats)} />
+        <JogDial label={`Jog Deck ${deck.id}`} position={deck.position_secs} vinylMode={deck.vinyl_mode} disabled={!deck.loaded_track || busy} sensitivity={deck.jog_sensitivity} onScratchLive={(token,action,speed)=>deckLiveScratch(deck.id,token,action,speed)} onNudge={beats => void onNudge(deck.id, beats)} />
         <div className="deck-lcd"><small>Deck {deck.id} / elapsed</small><strong>{Math.floor(deck.position_secs / 60).toString().padStart(2,"0")}:{(deck.position_secs % 60).toFixed(1).padStart(4,"0")}</strong><small>{deck.playing ? "Playing" : "Standby"} · {deck.loop_state?.enabled ? "Loop" : "Free"}</small></div>
       </div>
       <div className="deck-live-dsp grid grid-cols-2 gap-4">

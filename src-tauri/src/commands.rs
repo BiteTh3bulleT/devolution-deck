@@ -3165,6 +3165,25 @@ pub fn deck_turntable_scratch(
 }
 
 #[tauri::command]
+pub fn deck_live_scratch(
+    state: State<AppState>,
+    deck_id: String,
+    token: u64,
+    action: String,
+    speed: f64,
+) -> Result<(), String> {
+    if action != "end" {
+        let project = state.project.lock().map_err(|_| "Project lock")?;
+        if !find_deck(&project, &deck_id)?.vinyl_mode {
+            return Err("Enable Vinyl mode for live scratch".into());
+        }
+    }
+    state
+        .playback
+        .scratch_gesture(&deck_id, token, &action, speed)
+}
+
+#[tauri::command]
 pub fn deck_turntable_configure(
     state: State<AppState>,
     deck_id: String,

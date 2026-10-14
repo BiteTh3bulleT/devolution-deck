@@ -184,6 +184,11 @@ impl OutputSettings {
         Ok(settings)
     }
     fn path() -> Result<std::path::PathBuf, String> {
+        #[cfg(target_os = "macos")]
+        let root = std::env::var_os("HOME")
+            .map(|home| std::path::PathBuf::from(home).join("Library/Application Support"))
+            .ok_or("Home directory unavailable")?;
+        #[cfg(not(target_os = "macos"))]
         let root = std::env::var_os("LOCALAPPDATA")
             .ok_or("Local application data directory unavailable")?;
         Ok(std::path::PathBuf::from(root)
