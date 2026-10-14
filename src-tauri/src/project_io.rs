@@ -2,12 +2,27 @@
 
 use crate::models::{Project, PROJECT_SCHEMA_VERSION};
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 /// Serialize project to JSON and write to path.
 pub fn save_project(project: &Project, path: &Path) -> Result<(), String> {
+    validate_project(project)?;
     let json = serde_json::to_string_pretty(project).map_err(|e| e.to_string())?;
-    fs::write(path, json).map_err(|e| e.to_string())?;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let mut temporary = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    temporary
+        .write_all(json.as_bytes())
+        .map_err(|e| e.to_string())?;
+    temporary.as_file().sync_all().map_err(|e| e.to_string())?;
+    if path.exists() {
+        let backup = path.with_extension("deck.bak");
+        fs::copy(path, backup).map_err(|e| format!("Could not preserve backup: {e}"))?;
+    }
+    temporary.persist(path).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -102,7 +117,8 @@ pub fn load_project(path: &Path) -> Result<Project, String> {
     let contents = fs::read_to_string(path).map_err(|e| e.to_string())?;
     // Use a loose Value first to read the version without full schema constraints.
     let value: serde_json::Value = serde_json::from_str(&contents).map_err(|e| e.to_string())?;
-    let file_version = value.get("version").and_then(|v| v.as_u64()).unwrap_or(1) as u32;
+    let file_version = u32::try_from(value.get("version").and_then(|v| v.as_u64()).unwrap_or(1))
+        .map_err(|_| "Invalid schema version")?;
 
     if file_version > PROJECT_SCHEMA_VERSION {
         return Err(format!(
@@ -134,6 +150,136 @@ pub fn load_project(path: &Path) -> Result<Project, String> {
     if file_version < 8 {
         project = migrate_v7_to_v8(project);
     }
+    if file_version < 9 {
+        project.version = 9;
+        for track in &mut project.tracks {
+            for clip in &mut track.clips {
+                if let Some(warp) = &mut clip.warp {
+                    warp.algorithm = "wsola".into();
+                }
+            }
+        }
+    }
 
+    if file_version < 10 {
+        project.version = 10;
+    }
+    validate_project(&project)?;
     Ok(project)
+}
+
+pub fn validate_project(project: &Project) -> Result<(), String> {
+    if !project.bpm.is_finite() || !(20.0..=400.0).contains(&project.bpm) {
+        return Err("Tempo must be between 20 and 400 BPM".into());
+    }
+    if !(8000..=192000).contains(&project.sample_rate) {
+        return Err("Sample rate must be between 8 and 192 kHz".into());
+    }
+    if project.tracks.len() > 128 || project.media.len() > 4096 {
+        return Err("Project exceeds track/media limits".into());
+    }
+    let mut end = 30.0f64;
+    let mut ids = std::collections::HashSet::new();
+    for track in &project.tracks {
+        if !ids.insert(&track.id) {
+            return Err("Duplicate track ID".into());
+        }
+        if !track.volume_db.is_finite() || !track.pan.is_finite() {
+            return Err("Invalid mixer value".into());
+        }
+        for (start, duration) in track
+            .clips
+            .iter()
+            .map(|c| (c.start_secs, c.duration_secs))
+            .chain(
+                track
+                    .midi_clips
+                    .iter()
+                    .map(|c| (c.start_secs, c.duration_secs)),
+            )
+        {
+            if !start.is_finite()
+                || !duration.is_finite()
+                || start < 0.0
+                || duration <= 0.0
+                || start + duration > 3600.0
+            {
+                return Err("Clips must have a positive duration and fit within one hour".into());
+            }
+            end = end.max(start + duration);
+        }
+        for clip in &track.clips {
+            if !clip.source_offset_secs.is_finite() || clip.source_offset_secs < 0.0 {
+                return Err("Invalid clip source offset".into());
+            }
+            if let Some(warp) = clip.warp.as_ref().filter(|w| w.enabled) {
+                let source = warp.source_bpm.unwrap_or(project.bpm);
+                let target = warp.target_bpm.unwrap_or(project.bpm);
+                if !source.is_finite()
+                    || !target.is_finite()
+                    || source <= 0.0
+                    || target <= 0.0
+                    || !(0.25..=4.0).contains(&(source / target))
+                {
+                    return Err("Warp tempo ratio must be between 0.25 and 4".into());
+                }
+            }
+        }
+    }
+    if end * project.sample_rate as f64 * 2.0 * project.tracks.len() as f64 > 256_000_000.0 {
+        return Err(
+            "Arrangement exceeds the render memory budget; reduce its length, rate or track count"
+                .into(),
+        );
+    }
+    if let Some(region) = &project.loop_region {
+        if !region.start_secs.is_finite()
+            || !region.end_secs.is_finite()
+            || region.start_secs < 0.0
+            || region.end_secs <= region.start_secs
+        {
+            return Err("Invalid loop region".into());
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn old_schema_migrates_and_keeps_identity_after_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("old.deck");
+        let mut value = serde_json::to_value(Project::default()).unwrap();
+        value["version"] = serde_json::json!(8);
+        value.as_object_mut().unwrap().remove("id");
+        fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        let p = load_project(&path).unwrap();
+        assert_eq!(p.version, PROJECT_SCHEMA_VERSION);
+        save_project(&p, &path).unwrap();
+        let again = load_project(&path).unwrap();
+        assert_eq!(p.id, again.id);
+        assert!(path.with_extension("deck.bak").exists());
+    }
+    #[test]
+    fn invalid_save_does_not_damage_existing_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("good.deck");
+        let mut p = Project::default();
+        save_project(&p, &path).unwrap();
+        let original = fs::read(&path).unwrap();
+        p.bpm = f64::NAN;
+        assert!(save_project(&p, &path).is_err());
+        assert_eq!(original, fs::read(&path).unwrap());
+    }
+    #[test]
+    fn future_version_does_not_wrap_around() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("future.deck");
+        let mut value = serde_json::to_value(Project::default()).unwrap();
+        value["version"] = serde_json::json!(4294967297u64);
+        fs::write(&path, serde_json::to_vec(&value).unwrap()).unwrap();
+        assert!(load_project(&path).is_err());
+    }
 }

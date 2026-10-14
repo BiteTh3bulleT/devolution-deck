@@ -1,3 +1,4 @@
+import { HardwareKnob } from "./hardware/HardwareControls";
 import { useMemo, useState } from "react";
 import * as api from "../api";
 import { useProjectStore } from "../stores/projectStore";
@@ -151,97 +152,49 @@ export function PluginPanel() {
                   </div>
 
                   {instance.descriptor_id === "builtin://gain" && (
-                    <label className="mt-1 block text-[10px] text-deck-text-muted">
-                      Gain
-                      <input
-                        type="range"
-                        min={-24}
-                        max={24}
-                        step={0.1}
-                        value={instance.parameters.find((p) => p.id === "gain_db")?.value ?? 0}
-                        onChange={(event) =>
+                    <HardwareKnob label="Gain" min={-24} max={24} step={0.1} value={instance.parameters.find((p) => p.id === "gain_db")?.value ?? 0} onChange={(value) =>
                           void api
                             .trackPluginSetParameter(
                               selectedTrack.id,
                               instance.id,
                               "gain_db",
-                              Number(event.target.value)
+                              value
                             )
-                            .then(load)
-                        }
-                        className="w-full"
-                      />
-                    </label>
+                            .then(load)} unit="dB" />
                   )}
 
                   {instance.descriptor_id === "builtin://lowpass" && (
-                    <label className="mt-1 block text-[10px] text-deck-text-muted">
-                      Cutoff
-                      <input
-                        type="range"
-                        min={60}
-                        max={18000}
-                        step={1}
-                        value={instance.parameters.find((p) => p.id === "cutoff_hz")?.value ?? 9000}
-                        onChange={(event) =>
+                    <HardwareKnob label="Cutoff" min={60} max={18000} step={1} value={instance.parameters.find((p) => p.id === "cutoff_hz")?.value ?? 9000} onChange={(value) =>
                           void api
                             .trackPluginSetParameter(
                               selectedTrack.id,
                               instance.id,
                               "cutoff_hz",
-                              Number(event.target.value)
+                              value
                             )
-                            .then(load)
-                        }
-                        className="w-full"
-                      />
-                    </label>
+                            .then(load)} unit="" />
                   )}
 
                   {instance.descriptor_id === "builtin://compressor" && (
                     <>
-                      <label className="mt-1 block text-[10px] text-deck-text-muted">
-                        Threshold
-                        <input
-                          type="range"
-                          min={-48}
-                          max={0}
-                          step={0.1}
-                          value={instance.parameters.find((p) => p.id === "threshold_db")?.value ?? -18}
-                          onChange={(event) =>
+                      <HardwareKnob label="Threshold" min={-48} max={0} step={0.1} value={instance.parameters.find((p) => p.id === "threshold_db")?.value ?? -18} onChange={(value) =>
                             void api
                               .trackPluginSetParameter(
                                 selectedTrack.id,
                                 instance.id,
                                 "threshold_db",
-                                Number(event.target.value)
+                                value
                               )
-                              .then(load)
-                          }
-                          className="w-full"
-                        />
-                      </label>
-                      <label className="mt-1 block text-[10px] text-deck-text-muted">
-                        Ratio
-                        <input
-                          type="range"
-                          min={1}
-                          max={12}
-                          step={0.1}
-                          value={instance.parameters.find((p) => p.id === "ratio")?.value ?? 3}
-                          onChange={(event) =>
+                              .then(load)} unit="dB" />
+                      <HardwareKnob label="Ratio" min={1} max={12} step={0.1} value={instance.parameters.find((p) => p.id === "ratio")?.value ?? 3} onChange={(value) =>
                             void api
                               .trackPluginSetParameter(
                                 selectedTrack.id,
                                 instance.id,
                                 "ratio",
-                                Number(event.target.value)
+                                value
                               )
-                              .then(load)
-                          }
-                          className="w-full"
-                        />
-                      </label>
+                              .then(load)} unit="" />
                     </>
                   )}
                 </div>
@@ -335,18 +288,7 @@ export function PluginPanel() {
             ))}
           </select>
         </div>
-        <label className="text-[10px] text-deck-text-muted block">
-          Amount
-          <input
-            type="range"
-            min={0}
-            max={1}
-            step={0.01}
-            value={sidechainAmount}
-            onChange={(event) => setSidechainAmount(Number(event.target.value))}
-            className="w-full"
-          />
-        </label>
+        <HardwareKnob label="Amount" min={0} max={1} step={0.01} value={sidechainAmount} onChange={(value) => setSidechainAmount(value)} unit="" />
         <button
           type="button"
           onClick={async () => {

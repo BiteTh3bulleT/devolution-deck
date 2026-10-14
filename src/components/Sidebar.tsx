@@ -1,3 +1,4 @@
+import { CosmicIdentity } from "./CosmicIdentity";
 import { useCallback, useMemo, useState } from "react";
 import * as api from "../api";
 import { useBrowserStore } from "../stores/browserStore";
@@ -53,7 +54,8 @@ export function Sidebar() {
   );
 
   return (
-    <aside className="w-[280px] shrink-0 flex flex-col bg-deck-surface border-r border-deck-border overflow-hidden">
+    <aside className="deck-sidebar w-[216px] xl:w-[240px] shrink-0 flex flex-col bg-deck-surface border-r border-deck-border overflow-hidden">
+      <CosmicIdentity />
       <div className="p-2 border-b border-deck-border space-y-2">
         <h2 className="text-xs font-display font-semibold uppercase tracking-wider text-deck-text-muted">
           Browser
@@ -89,7 +91,7 @@ export function Sidebar() {
             value={newTagLabel}
             onChange={(event) => setNewTagLabel(event.target.value)}
             placeholder="new tag"
-            className="flex-1 rounded border border-deck-border bg-deck-panel px-2 py-1 text-xs"
+            className="min-w-0 flex-1 rounded border border-deck-border bg-deck-panel px-2 py-1 text-xs"
           />
           <button
             type="button"

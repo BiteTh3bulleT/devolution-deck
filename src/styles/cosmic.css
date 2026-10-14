@@ -1,0 +1,67 @@
+/* Artist-approved direction: psychedelic alien mothership, static art with legible stage controls. */
+.deck-app { background:var(--deck-bg); }
+.deck-transport {
+  background-image:linear-gradient(180deg,#231039e8,#0d071bea),url('/src/assets/ui/v5/alien-mothership.png');
+  background-size:auto,cover; background-position:center,center 40%;
+  border-top:2px solid var(--deck-magenta);border-bottom:1px solid #623779;
+  box-shadow:0 3px 18px #0008,inset 0 -1px #b550cb30;
+}
+.cosmic-title { display:grid; grid-template-columns:auto minmax(0,1fr);column-gap:10px;align-items:center; }
+.cosmic-transport-logo { width:112px;height:38px;object-fit:contain;grid-row:1/3;filter:drop-shadow(0 0 7px #e84ab82b); }
+.cosmic-identity {
+  position:relative;flex-shrink:0;min-height:166px;padding:22px 12px 14px;isolation:isolate;
+  background-image:linear-gradient(90deg,#110721d9,#190d2a29),url('/src/assets/ui/v5/alien-mothership.png');
+  background-size:auto,auto 210px;background-position:center,right center;
+  border-bottom:1px solid #834b9366;
+}
+.cosmic-identity img { display:block;width:150px;height:50px;object-fit:contain;margin:0 0 22px;filter:drop-shadow(0 2px 5px #000); }
+.cosmic-identity p { font:600 10px Orbitron,sans-serif;letter-spacing:.15em;color:#f1b9ee;margin:0 0 7px;text-shadow:0 1px 4px #000; }
+.cosmic-identity span { font-size:10px;color:#e6dcf4;text-shadow:0 1px 3px #000; }
+.deck-status { background:#11091b;border-bottom:1px solid #522968; }
+.deck-sidebar,.deck-utility { background-image:linear-gradient(110deg,#140b23f5,#211331fa);border-color:#59346e; }
+.deck-utility-header { background:linear-gradient(110deg,#321345,#131026);border-bottom-color:#5a336c; }
+.deck-module-title::before { background:var(--deck-accent);box-shadow:0 0 9px #beee7b80; }
+.deck-workspace,.deck-decks,.deck-stage,.deck-session,.deck-lab {
+  background-image:linear-gradient(180deg,#110920d6,#0d0719eb),url('/src/assets/ui/v5/alien-mothership.png');
+  background-size:auto,cover;background-position:center,right center;
+}
+.deck-app [class*='devooo-'][class*='card'],.deck-channel,.deck-lab .lab-processor {
+  background-image:linear-gradient(130deg,#241339f5,#10091df5),url('/src/assets/ui/v5/alien-mothership.png');
+  background-size:auto,cover;border-color:#603a74;
+  box-shadow:0 8px 20px #0004,inset 0 1px #ef96f318;
+}
+.deck-channel { border-top:2px solid var(--deck-cyan); }
+.deck-channel:nth-child(2) { border-top-color:var(--deck-magenta); }
+.deck-track-header { background:linear-gradient(100deg,#341d46,#181026); }
+.deck-lcd { background:linear-gradient(#0b0818,#110e24);color:#ade9ed;border-color:#3e416e; }
+.deck-lcd small { color:#aabecf; }
+.deck-lab-header { border-bottom-color:#764278;background-image:linear-gradient(90deg,#170b2dee,#170b2d99,#170b2d33),url('/src/assets/ui/v5/alien-mothership.png');background-repeat:no-repeat;background-size:auto,auto 280px;background-position:center,right 36%;padding:22px;border-radius:12px;min-height:160px; }
+.deck-lab-header h1 { color:#f3eefe; }
+.deck-lab .lab-chart,.deck-lab .lab-measurements { background:#0e0a1c;border-color:#513662; }
+.deck-lab .lab-chart svg { background:#0b0817; }
+.deck-app :is(input:not([type=range]):not([type=checkbox]):not([type=color]),select,textarea) { background:#10091e;border-color:#5b3970; }
+.deck-app button { border-color:#694582;background-color:#21122f; }
+.deck-app button:hover:not(:disabled) { border-color:var(--deck-cyan);box-shadow:0 0 9px #70e7f426; }
+.deck-app button[aria-pressed='true'] { border-color:var(--deck-accent);box-shadow:0 0 8px #bfed7b25; }
+.deck-app .hardware-jog { box-shadow:0 0 24px #8652cf21; }
+.deck-app .hardware-jog:hover:not(:disabled) { box-shadow:0 0 22px #70e7f444; }
+.hardware-control-value { color:var(--deck-accent); }
+.hardware-jog-hub { color:#e1b6fb; }
+@media (max-width:1150px) { .cosmic-transport-logo { width:74px;height:28px; }.cosmic-title { column-gap:6px; }.cosmic-title>span:last-child { display:none; }.cosmic-identity { min-height:140px;padding-top:15px; }.cosmic-identity img { width:132px;height:44px;margin-bottom:16px; } }
+
+/* Touch performance opens the console width for two independently captured platters. */
+.deck-app:has(.touch-performance) :is(.deck-sidebar,.deck-utility) { display:none; }
+.deck-app button.hardware-jog { width:clamp(220px,22vw,300px);height:clamp(220px,22vw,300px);max-width:100%; }
+.deck-jog-stage { flex-direction:column; }
+.touch-performance .deck-platter-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.deck-app .touch-performance button.hardware-jog { width:clamp(320px,32vw,440px);height:clamp(320px,32vw,440px); }
+.touch-performance :is(button,input,select) { min-height:48px;min-width:48px; font-size:14px; }
+.touch-performance button { touch-action:manipulation;white-space:normal; }
+.touch-performance .hardware-jog { touch-action:none; }
+.touch-performance .hardware-knob-face { width:112px;height:112px; }
+.touch-performance .hardware-control-label,.touch-performance .hardware-control-value { font-size:13px; }
+.touch-performance .deck-lcd { text-align:center;min-width:220px; }
+.touch-performance .deck-lcd strong { font-size:26px; }
+.deck-app:has(.touch-performance) :is(.deck-transport,.deck-status) button { min-height:48px;min-width:48px; }
+.deck-app:has(.touch-performance) .deck-transport { overflow-x:auto; }
+@media (max-width:800px) { .touch-performance .deck-platter-grid { grid-template-columns:minmax(0,1fr); } }

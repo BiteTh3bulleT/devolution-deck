@@ -20,7 +20,11 @@ fn curved_lerp(t: f64, curve: f64) -> f64 {
     }
 }
 
-fn interpolate(left: &crate::models::AutomationPoint, right: &crate::models::AutomationPoint, time_secs: f64) -> f64 {
+fn interpolate(
+    left: &crate::models::AutomationPoint,
+    right: &crate::models::AutomationPoint,
+    time_secs: f64,
+) -> f64 {
     let dt = right.time_secs - left.time_secs;
     if dt <= 0.0 {
         return right.value;
@@ -75,6 +79,9 @@ impl LaneSampler {
 
     /// Value at `time_secs`, assuming non-decreasing time across calls.
     pub fn value_at(&mut self, time_secs: f64) -> f64 {
+        if time_secs < self.points[self.cursor].time_secs {
+            self.cursor = 0;
+        }
         if time_secs <= self.points[0].time_secs {
             return self.points[0].value;
         }

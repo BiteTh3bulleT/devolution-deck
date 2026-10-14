@@ -39,7 +39,7 @@ export function SessionLauncher() {
   }
 
   return (
-    <div className="flex flex-col flex-1 min-h-0 bg-deck-bg">
+    <div className="deck-session flex flex-col flex-1 min-h-0 bg-deck-bg">
       <div className="flex items-center justify-between px-3 py-2 border-b border-deck-border bg-deck-panel/80">
         <div className="flex items-center gap-2">
           <h2 className="text-xs font-display tracking-widest uppercase text-deck-cyan">Session Launcher</h2>

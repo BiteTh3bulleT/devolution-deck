@@ -1,107 +1,87 @@
 import { create } from "zustand";
 import * as api from "../api";
-import { useLoopStore } from "./loopStore";
+import { useRecordingStore } from "./recordingStore";
 import { useProjectStore } from "./projectStore";
 import { metronomeService } from "../services/metronome";
 import { midiSequencer } from "../services/midiSequencer";
-
-const POSITION_POLL_MS = 50;
-
-export type TransportStatus = "stopped" | "playing";
-
-interface TransportState {
+export type TransportStatus = "stopped" | "starting" | "playing";
+let generation = 0;
+interface TransportStore {
   status: TransportStatus;
-  /** Timeline position in seconds (for display and playhead). */
   positionSecs: number;
-  /** Whether we are currently polling backend for position. */
   _positionPollId: ReturnType<typeof setInterval> | null;
-  /** Guard to prevent stacked loop seeks. */
-  _loopSeeking: boolean;
-}
-
-interface TransportActions {
   play: (startSecs?: number) => Promise<void>;
   stop: () => Promise<void>;
   setPositionSecs: (secs: number) => void;
   startPositionPoll: () => void;
   stopPositionPoll: () => void;
 }
-
-export const useTransportStore = create<TransportState & TransportActions>((set, get) => ({
-  status: "stopped",
-  positionSecs: 0,
-  _positionPollId: null,
-  _loopSeeking: false,
-
+export const useTransportStore = create<TransportStore>((set, get) => ({
+  status: "stopped", positionSecs: 0, _positionPollId: null,
   async play(startSecs) {
+    if (get().status !== "stopped") return;
+    const ticket = ++generation;
+    const projectId = useProjectStore.getState().project?.id;
+    const position = startSecs ?? get().positionSecs;
+    set({ status: "starting" });
     try {
-      const timelineStart = startSecs ?? get().positionSecs;
-      await api.playbackPlayArrangement(timelineStart);
-      set({ positionSecs: timelineStart, status: "playing" });
+      await api.playbackPlayArrangement(position);
+      if (ticket !== generation) return;
+      if (projectId !== useProjectStore.getState().project?.id) { set({ status: "stopped" }); return; }
+      set({ status: "playing", positionSecs: position });
       get().startPositionPoll();
-    } catch (e) {
-      console.error("Play failed", e);
+    } catch (error) {
+      if (ticket !== generation) return;
       set({ status: "stopped" });
+      useProjectStore.setState({ error: `Playback failed: ${error}` });
     }
   },
-
   async stop() {
+    ++generation;
     get().stopPositionPoll();
-    try {
-      await api.playbackStop();
-    } catch (e) {
-      console.error("Stop failed", e);
-    }
-    metronomeService.stop();
-    midiSequencer.stop();
+    metronomeService.stop(); midiSequencer.stop();
     set({ status: "stopped", positionSecs: 0 });
+    // Dispatch audio Stop immediately; writing a recorded take can take longer.
+    const audioStop = api.playbackStop();
+    const results = await Promise.allSettled([audioStop, useRecordingStore.getState().stopRecording()]);
+    for (const result of results) if (result.status === "rejected") {
+      useProjectStore.setState({ error: `Stop failed: ${result.reason}` });
+    }
   },
-
-  setPositionSecs(secs) {
-    set({ positionSecs: secs });
-  },
-
+  setPositionSecs(positionSecs) { set({ positionSecs }); },
   startPositionPoll() {
     get().stopPositionPoll();
+    const ticket = generation;
+    let pending = false;
+    const current = () => ticket === generation && get().status === "playing";
     const id = setInterval(async () => {
+      if (pending || !current()) return;
+      pending = true;
       try {
         const playing = await api.playbackIsPlaying();
+        if (!current()) return;
         if (!playing) {
-          get().stopPositionPoll();
-          set({ status: "stopped" });
-          return;
+          get().stopPositionPoll(); metronomeService.stop(); midiSequencer.stop();
+          set({ status: "stopped" }); return;
         }
         const ms = await api.playbackPositionMs();
+        if (!current()) return;
         const positionSecs = ms / 1000;
         set({ positionSecs });
-
-        // Sync metronome and MIDI sequencer to current transport position
         const bpm = useProjectStore.getState().project?.bpm ?? 120;
-        metronomeService.tick(positionSecs, bpm);
-        midiSequencer.tick(positionSecs, bpm);
-
-        // Loop region enforcement (with seeking guard to prevent stacked seeks)
-        const { region } = useLoopStore.getState();
-        if (region?.enabled && positionSecs >= region.end_secs && !get()._loopSeeking) {
-          set({ _loopSeeking: true });
-          try {
-            await api.playbackSeek(region.start_secs);
-          } finally {
-            set({ _loopSeeking: false });
-          }
-        }
-      } catch (e) {
-        console.error("Position poll failed", e);
-        get().stopPositionPoll();
+        metronomeService.tick(positionSecs, bpm); midiSequencer.tick(positionSecs, bpm);
+      } catch (error) {
+        if (!current()) return;
+        get().stopPositionPoll(); metronomeService.stop(); midiSequencer.stop();
         set({ status: "stopped" });
-      }
-    }, POSITION_POLL_MS);
+        useProjectStore.setState({ error: `Position poll failed: ${error}` });
+      } finally { pending = false; }
+    }, 50);
     set({ _positionPollId: id });
   },
-
   stopPositionPoll() {
     const id = get()._positionPollId;
-    if (id) clearInterval(id);
-    set({ _positionPollId: null, _loopSeeking: false });
+    if (id !== null) clearInterval(id);
+    set({ _positionPollId: null });
   },
 }));

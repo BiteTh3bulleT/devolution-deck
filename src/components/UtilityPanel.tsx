@@ -53,8 +53,10 @@ export function UtilityPanel() {
         utility_tab: tabId,
       })
       .then((navigation) => {
+        const current = useProjectStore.getState().project;
+        if (!current || current.id !== project.id) return;
         setProject({
-          ...project,
+          ...current,
           navigation,
         });
       })
@@ -64,25 +66,12 @@ export function UtilityPanel() {
   };
 
   return (
-    <aside className="w-[340px] shrink-0 flex flex-col bg-deck-surface border-l border-deck-border overflow-hidden">
-      <div className="p-2 border-b border-deck-border">
-        <div className="flex flex-wrap items-center gap-1">
-          {TABS.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => selectTab(tab.id)}
-              className={[
-                "px-2 py-1 text-[11px] transition-colors",
-                utilityTab === tab.id
-                  ? "devooo-utility-tab-active text-deck-cyan"
-                  : "devooo-utility-tab-inactive text-deck-text-muted",
-              ].join(" ")}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
+    <aside className="deck-utility w-[320px] xl:w-[360px] shrink-0 flex flex-col bg-deck-surface border-l border-deck-border overflow-hidden">
+      <div className="deck-utility-header">
+        <div><span className="deck-module-title">Control rack</span><span>{String(TABS.findIndex(t => t.id === utilityTab) + 1).padStart(2, "0")} / 15</span></div>
+        <select aria-label="Control rack module" value={utilityTab} onChange={e => selectTab(e.target.value as typeof utilityTab)}>
+          {TABS.map(tab => <option key={tab.id} value={tab.id}>{tab.label}</option>)}
+        </select>
       </div>
 
       <div

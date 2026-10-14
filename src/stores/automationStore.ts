@@ -63,7 +63,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
       ...project,
       automation_lanes: [...project.automation_lanes, lane],
     };
-    await api.projectUpdate(updated);
+    await api.projectUpdate(updated, project);
     await useProjectStore.getState().load();
     set({ selectedLaneId: lane.id, selectedTrackId: trackId, selectedParameter: parameter });
     return lane;
@@ -83,7 +83,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
             }
       ),
     };
-    await api.projectUpdate(updated);
+    await api.projectUpdate(updated, project);
     await useProjectStore.getState().load();
   },
 
@@ -105,7 +105,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
             }
       ),
     };
-    await api.projectUpdate(updated);
+    await api.projectUpdate(updated, project);
     await useProjectStore.getState().load();
   },
 
@@ -123,7 +123,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
             }
       ),
     };
-    await api.projectUpdate(updated);
+    await api.projectUpdate(updated, project);
     await useProjectStore.getState().load();
   },
 
@@ -141,7 +141,7 @@ export const useAutomationStore = create<AutomationStoreState>((set, get) => ({
             }
       ),
     };
-    await api.projectUpdate(updated);
+    await api.projectUpdate(updated, project);
     await useProjectStore.getState().load();
     if (get().selectedLaneId === laneId) {
       set({ selectedLaneId: laneId });

@@ -148,7 +148,7 @@ export const useSampleStore = create<SampleStoreState>((set) => ({
             }
       ),
     };
-    await api.projectUpdate(updated);
+    await api.projectUpdate(updated, project);
     await useProjectStore.getState().load();
     set({ pendingMarkers: [] });
   },
@@ -163,11 +163,15 @@ export const useSampleStore = create<SampleStoreState>((set) => ({
           ? track
           : {
               ...track,
-              clips: track.clips.map((clip) => (clip.id === clipId ? { ...clip, warp } : clip)),
+              clips: track.clips.map((clip) => {
+                if (clip.id !== clipId) return clip;
+                const ratio = (value?: WarpState) => value?.enabled ? (value.source_bpm ?? project.bpm) / (value.target_bpm ?? project.bpm) : 1;
+                return { ...clip, warp, duration_secs: clip.duration_secs / ratio(clip.warp) * ratio(warp) };
+              }),
             }
       ),
     };
-    await api.projectUpdate(updated);
+    await api.projectUpdate(updated, project);
     await useProjectStore.getState().load();
   },
 
@@ -199,7 +203,7 @@ export const useSampleStore = create<SampleStoreState>((set) => ({
           : track
       ),
     };
-    await api.projectUpdate(next);
+    await api.projectUpdate(next, project);
     await useProjectStore.getState().load();
     set({ pendingMarkers: [] });
   },

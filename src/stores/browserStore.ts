@@ -20,7 +20,7 @@ function patchProject(mutator: (project: Project) => Project): Promise<void> {
   const project = useProjectStore.getState().project;
   if (!project) return Promise.resolve();
   const next = mutator(project);
-  return api.projectUpdate(next).then(() => useProjectStore.getState().load());
+  return api.projectUpdate(next, project).then(() => useProjectStore.getState().load());
 }
 
 function ensureAssetEntry(entries: BrowserAssetIndexEntry[], assetId: string): BrowserAssetIndexEntry[] {

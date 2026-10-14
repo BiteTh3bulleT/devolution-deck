@@ -307,13 +307,29 @@ pub fn side_gain(side: &CrossfaderSide, gain_a: f64, gain_b: f64) -> f64 {
 }
 
 pub fn sync_follower(master: &DeckState, follower: &mut DeckState, quantize_beats: u32) {
+    let master_source_bpm = master.tempo_bpm / master.tempo_multiplier.max(0.01);
+    let follower_source_bpm = follower.tempo_bpm / follower.tempo_multiplier.max(0.01);
+    let quantum = quantize_beats.max(1) as f64;
+    let master_phase = (master.position_secs * master_source_bpm / 60.0).rem_euclid(quantum);
+    let follower_phase = (follower.position_secs * follower_source_bpm / 60.0).rem_euclid(quantum);
+    let delta = (master_phase - follower_phase + quantum / 2.0).rem_euclid(quantum) - quantum / 2.0;
     follower.tempo_bpm = master.tempo_bpm;
-    follower.tempo_multiplier = master.tempo_multiplier;
-    if quantize_beats > 0 {
-        let q = quantize_beats as f64;
-        follower.beat_phase = (master.beat_phase / q).round() * q;
-    } else {
-        follower.beat_phase = master.beat_phase;
+    follower.tempo_multiplier = (master.tempo_bpm / follower_source_bpm).clamp(0.25, 4.0);
+    follower.position_secs = (follower.position_secs + delta * 60.0 / follower_source_bpm).max(0.0);
+    follower.beat_phase = master.beat_phase;
+}
+
+#[cfg(test)]
+mod sync_tests {
+    use super::*;
+    #[test]
+    fn sync_adjusts_native_tempo_without_jumping_to_another_song_position() {
+        let mut master = DeckState::new("A", 120.0);
+        master.position_secs = 12.0;
+        let mut follower = DeckState::new("B", 90.0);
+        follower.position_secs = 10.0;
+        sync_follower(&master, &mut follower, 4);
+        assert!((follower.tempo_multiplier - 4.0 / 3.0).abs() < 1e-6);
+        assert!((follower.position_secs - 10.666666).abs() < 1e-5);
     }
-    follower.position_secs = master.position_secs;
 }

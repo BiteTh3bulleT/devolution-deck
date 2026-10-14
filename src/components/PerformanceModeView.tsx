@@ -15,7 +15,7 @@ export function PerformanceModeView() {
   }
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto bg-[radial-gradient(circle_at_20%_0%,rgba(255,107,26,0.16),transparent_45%),radial-gradient(circle_at_80%_0%,rgba(56,215,255,0.12),transparent_45%)] p-4">
+    <div className="deck-stage flex-1 min-h-0 overflow-auto p-4">
       <div className="max-w-6xl mx-auto space-y-4">
         <div className="rounded border border-deck-border bg-deck-panel/80 p-3">
           <div className="flex items-center justify-between">

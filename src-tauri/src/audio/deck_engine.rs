@@ -1,6 +1,67 @@
 use crate::models::LoopState;
 use crate::models::Project;
 use std::path::Path;
+use std::sync::{Arc, Mutex, OnceLock};
+
+pub(crate) fn prepare_live_decks(project: &Project) -> Result<Vec<super::PlayingDeck>, String> {
+    type Cached = (std::time::SystemTime, Arc<Vec<f32>>, Arc<Vec<f32>>);
+    static CACHE: OnceLock<Mutex<std::collections::HashMap<String, Cached>>> = OnceLock::new();
+    let mut cache = CACHE
+        .get_or_init(|| Mutex::new(std::collections::HashMap::new()))
+        .lock()
+        .map_err(|_| "Deck cache lock failed")?;
+    let mut decks = Vec::new();
+    for deck in project.decks.iter().filter(|d| d.playing) {
+        let reference = deck
+            .loaded_track
+            .as_ref()
+            .ok_or("Playing deck has no loaded track")?;
+        let asset = project
+            .media
+            .iter()
+            .find(|m| m.id == reference.media_asset_id)
+            .ok_or("Deck media not found")?;
+        let modified = std::fs::metadata(&asset.path)
+            .and_then(|m| m.modified())
+            .map_err(|e| e.to_string())?;
+        if !cache.get(&asset.path).is_some_and(|c| c.0 == modified) {
+            let (rate, source) = super::render::decode_audio_stereo(Path::new(&asset.path))?;
+            let source = super::render::resample_stereo(&source, rate, 48000);
+            if cache.len() >= 4 {
+                cache.clear();
+            }
+            cache.insert(
+                asset.path.clone(),
+                (modified, Arc::new(source.left), Arc::new(source.right)),
+            );
+        }
+        let (_, left, right) = cache
+            .get(&asset.path)
+            .ok_or("Decoded deck missing from cache")?;
+        let loop_region = deck
+            .loop_state
+            .as_ref()
+            .filter(|l| l.enabled && l.end_secs > l.start_secs)
+            .map(|l| (l.start_secs, l.end_secs));
+        decks.push(super::PlayingDeck {
+            id: deck.id.clone(),
+            left: left.clone(),
+            right: right.clone(),
+            position_secs: deck.position_secs,
+            speed: deck.tempo_multiplier.clamp(0.25, 4.0),
+            gain: db_to_gain(deck.gain_db) * crossfader_gain_for_deck(project, &deck.id) as f32,
+            filter: deck.filter.clamp(-1.0, 1.0) as f32,
+            cue_gain: if deck.headphone_cue {
+                db_to_gain(deck.gain_db)
+            } else {
+                0.0
+            },
+            loop_region,
+            playing: true,
+        });
+    }
+    Ok(decks)
+}
 
 #[derive(Debug, Clone)]
 pub(crate) struct DeckAudioSource {

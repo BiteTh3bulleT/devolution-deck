@@ -10,6 +10,7 @@ use hound::{SampleFormat, WavSpec, WavWriter};
 use std::collections::HashMap;
 use std::fs::File;
 use std::path::Path;
+use std::sync::Arc;
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::formats::FormatOptions;
@@ -34,14 +35,18 @@ pub(crate) struct StereoSource {
     pub(crate) right: Vec<f32>,
 }
 
-type DecodedAssetCache = HashMap<String, StereoSource>;
+type DecodedAssetCache = HashMap<String, Arc<StereoSource>>;
 
 fn db_to_gain(db: f64) -> f32 {
     (10f64.powf(db / 20.0)) as f32
 }
 
 fn clip_sample(v: f32) -> f32 {
-    v.clamp(-1.0, 1.0)
+    if v.is_finite() {
+        v
+    } else {
+        0.0
+    }
 }
 
 /// Pan as a balance control: unity at center, attenuates the opposite
@@ -119,6 +124,12 @@ pub(crate) fn decode_audio_stereo(path: &Path) -> Result<(u32, StereoSource), St
         let mut buf = SampleBuffer::<f32>::new(duration as u64, spec);
         buf.copy_interleaved_ref(decoded);
         let interleaved = buf.samples();
+        if left.len().saturating_add(interleaved.len() / channels) > 32_000_000 {
+            return Err("Audio exceeds the 32-million-frame decode budget; split the file into smaller sections".into());
+        }
+        if interleaved.iter().any(|s| !s.is_finite()) {
+            return Err("Audio contains invalid non-finite PCM samples".into());
+        }
         for frame in interleaved.chunks(channels) {
             let l = frame[0];
             let r = if channels >= 2 { frame[1] } else { frame[0] };
@@ -255,13 +266,16 @@ fn decode_asset_cached(
     media_asset_id: &str,
     sample_rate: u32,
     cache: &mut DecodedAssetCache,
-) -> Option<StereoSource> {
+) -> Option<Arc<StereoSource>> {
     if let Some(cached) = cache.get(media_asset_id) {
         return Some(cached.clone());
     }
     let asset = project.media.iter().find(|m| m.id == media_asset_id)?;
     let (src_sr, raw) = decode_audio_stereo(Path::new(&asset.path)).ok()?;
-    let source = resample_stereo(&raw, src_sr, sample_rate);
+    let source = Arc::new(resample_stereo(&raw, src_sr, sample_rate));
+    if cache.values().map(|s| s.left.len()).sum::<usize>() + source.left.len() > 64_000_000 {
+        cache.clear();
+    }
     cache.insert(media_asset_id.to_string(), source.clone());
     Some(source)
 }
@@ -285,6 +299,13 @@ fn render_comp_regions_with_cache(
         let source_offset =
             clip.source_offset_secs + (region.start_secs - clip.start_secs).max(0.0);
         let dur = (region.end_secs - region.start_secs).max(0.0);
+        let a = (region.start_secs.max(0.0) * sample_rate as f64).round() as usize;
+        let b = (region.end_secs.max(0.0) * sample_rate as f64).round() as usize;
+        let end = b.min(left.len());
+        if a < end {
+            left[a..end].fill(0.0);
+            right[a..end].fill(0.0);
+        }
         mix_stereo_segment(
             left,
             right,
@@ -313,10 +334,12 @@ fn render_arrangement_track(
     sample_rate: u32,
     total_frames: usize,
     cache: &mut DecodedAssetCache,
+    ignore_mute: bool,
 ) -> Vec<f32> {
     let mut left = vec![0.0f32; total_frames];
     let mut right = vec![0.0f32; total_frames];
 
+    let mut frozen_loaded = false;
     if track.freeze_state.is_frozen {
         if let Some(path) = &track.freeze_state.frozen_path {
             if let Ok((src_sr, raw)) = decode_audio_stereo(Path::new(path)) {
@@ -331,64 +354,87 @@ fn render_arrangement_track(
                     &source,
                     sample_rate,
                 );
-                return interleave(&left, &right);
+                frozen_loaded = true;
             }
         }
     }
 
-    if !track.comp_regions.is_empty() {
-        render_comp_regions_with_cache(project, track, &mut left, &mut right, sample_rate, cache);
-    } else {
+    if !frozen_loaded {
         for clip in &track.clips {
             let Some(source) =
                 decode_asset_cached(project, &clip.media_asset_id, sample_rate, cache)
             else {
                 continue;
             };
+            let (source, source_offset) = if let Some(warp) =
+                clip.warp.as_ref().filter(|w| w.enabled)
+            {
+                let ratio =
+                    warp.source_bpm.unwrap_or(project.bpm) / warp.target_bpm.unwrap_or(project.bpm);
+                let a = (clip.source_offset_secs * sample_rate as f64).round() as usize;
+                let b = (a + (clip.duration_secs / ratio * sample_rate as f64).round() as usize)
+                    .min(source.left.len());
+                if a >= b {
+                    continue;
+                }
+                (
+                    Arc::new(super::stretch::stretch_stereo(
+                        &StereoSource {
+                            left: source.left[a..b].to_vec(),
+                            right: source.right[a..b].to_vec(),
+                        },
+                        ratio,
+                    )),
+                    0.0,
+                )
+            } else {
+                (source, clip.source_offset_secs)
+            };
             mix_stereo_segment(
                 &mut left,
                 &mut right,
                 clip.start_secs,
-                clip.source_offset_secs,
+                source_offset,
                 clip.duration_secs,
                 &source,
                 sample_rate,
             );
         }
-    }
+        render_comp_regions_with_cache(project, track, &mut left, &mut right, sample_rate, cache);
 
-    if !track.midi_clips.is_empty() {
-        let voice = super::engine::midi_synth::MidiVoice::from_plugin_type(
-            track
-                .instrument
-                .as_ref()
-                .map(|instrument| instrument.plugin_type.as_str()),
-        );
-        let mut midi = vec![0.0f32; total_frames];
-        for clip in &track.midi_clips {
-            super::engine::midi_synth::synth_midi_clip(
-                &mut midi,
-                clip,
-                voice,
-                project.bpm,
-                sample_rate,
+        if !track.midi_clips.is_empty() {
+            let voice = super::engine::midi_synth::MidiVoice::from_plugin_type(
+                track
+                    .instrument
+                    .as_ref()
+                    .map(|instrument| instrument.plugin_type.as_str()),
             );
+            let mut midi = vec![0.0f32; total_frames];
+            for clip in &track.midi_clips {
+                super::engine::midi_synth::synth_midi_clip(
+                    &mut midi,
+                    clip,
+                    voice,
+                    project.bpm,
+                    sample_rate,
+                );
+            }
+            for (i, sample) in midi.iter().enumerate() {
+                left[i] += *sample;
+                right[i] += *sample;
+            }
         }
-        for (i, sample) in midi.iter().enumerate() {
-            left[i] += *sample;
-            right[i] += *sample;
-        }
+
+        apply_plugin_chain_stereo(
+            &mut left,
+            &mut right,
+            &track.plugin_chain.instances,
+            sample_rate,
+            &project.plugin_registry,
+        );
     }
 
-    apply_plugin_chain_stereo(
-        &mut left,
-        &mut right,
-        &track.plugin_chain.instances,
-        sample_rate,
-        &project.plugin_registry,
-    );
-
-    if track.muted {
+    if track.muted && !ignore_mute {
         left.fill(0.0);
         right.fill(0.0);
     } else {
@@ -522,6 +568,7 @@ pub fn render_project_tracks(
     project: &Project,
     include_muted: bool,
 ) -> Result<Vec<RenderedTrack>, String> {
+    crate::project_io::validate_project(project)?;
     let sample_rate = project.sample_rate.max(8000);
     let duration = clip_duration_secs(project);
     let total_frames = (duration * sample_rate as f64).ceil() as usize;
@@ -538,6 +585,7 @@ pub fn render_project_tracks(
                 sample_rate,
                 total_frames,
                 &mut cache,
+                include_muted,
             ),
             sample_rate,
             channels: 2,
@@ -551,7 +599,12 @@ pub fn render_project_tracks(
         .collect();
 
     for route in &project.sidechain_routes {
-        if !route.enabled {
+        if !route.enabled
+            || project
+                .tracks
+                .iter()
+                .any(|t| t.id == route.to_track_id && t.freeze_state.is_frozen)
+        {
             continue;
         }
         let Some(&source_idx) = index_by_id.get(&route.from_track_id) else {
@@ -615,10 +668,12 @@ pub fn render_project_tracks(
         }
     }
 
+    apply_routing(project, &mut rendered, include_muted)?;
     Ok(rendered)
 }
 
 pub fn render_project_track(project: &Project, track_id: &str) -> Result<RenderedTrack, String> {
+    crate::project_io::validate_project(project)?;
     let sample_rate = project.sample_rate.max(8000);
     let duration = clip_duration_secs(project);
     let total_frames = (duration * sample_rate as f64).ceil() as usize;
@@ -632,18 +687,23 @@ pub fn render_project_track(project: &Project, track_id: &str) -> Result<Rendere
     let mut target = RenderedTrack {
         track_id: track.id.clone(),
         name: track.name.clone(),
-        samples: render_arrangement_track(project, track, sample_rate, total_frames, &mut cache),
+        samples: render_arrangement_track(
+            project,
+            track,
+            sample_rate,
+            total_frames,
+            &mut cache,
+            true,
+        ),
         sample_rate,
         channels: 2,
     };
 
     // Apply only sidechain routes that target this track, rendering only the
     // source tracks needed by those routes.
-    for route in project
-        .sidechain_routes
-        .iter()
-        .filter(|route| route.enabled && route.to_track_id == track_id)
-    {
+    for route in project.sidechain_routes.iter().filter(|route| {
+        route.enabled && route.to_track_id == track_id && !track.freeze_state.is_frozen
+    }) {
         if let Some(instance_id) = route.target_plugin_instance_id.as_ref() {
             let applies = track.plugin_chain.instances.iter().any(|instance| {
                 instance.id == *instance_id && instance.enabled && !instance.bypassed
@@ -659,12 +719,135 @@ pub fn render_project_track(project: &Project, track_id: &str) -> Result<Rendere
         else {
             continue;
         };
-        let source =
-            render_arrangement_track(project, source_track, sample_rate, total_frames, &mut cache);
+        let source = render_arrangement_track(
+            project,
+            source_track,
+            sample_rate,
+            total_frames,
+            &mut cache,
+            false,
+        );
         apply_sidechain_ducking(&source, &mut target.samples, 2, route.amount, sample_rate);
     }
 
     Ok(target)
+}
+
+/// Render before live fader/pan automation; freeze can keep mixer controls live.
+pub fn render_project_track_pre_mixer(
+    project: &Project,
+    track_id: &str,
+    raw: bool,
+) -> Result<RenderedTrack, String> {
+    let mut source = project.clone();
+    let track = source
+        .tracks
+        .iter_mut()
+        .find(|t| t.id == track_id)
+        .ok_or("Track not found")?;
+    track.volume_db = 0.0;
+    track.pan = 0.0;
+    track.muted = false;
+    if raw {
+        track.plugin_chain.instances.clear();
+    }
+    source
+        .automation_lanes
+        .retain(|l| l.track_id != track_id || (l.parameter != "volume_db" && l.parameter != "pan"));
+    if raw {
+        source
+            .sidechain_routes
+            .retain(|r| r.to_track_id != track_id);
+    }
+    render_project_track(&source, track_id)
+}
+
+fn apply_routing(
+    project: &Project,
+    rendered: &mut Vec<RenderedTrack>,
+    include_muted: bool,
+) -> Result<(), String> {
+    let mut pre_fader = HashMap::new();
+    for send in project
+        .routing
+        .sends
+        .iter()
+        .filter(|s| s.enabled && s.pre_fader)
+    {
+        if !pre_fader.contains_key(&send.from_track_id)
+            && project
+                .tracks
+                .iter()
+                .any(|t| t.id == send.from_track_id && (include_muted || !t.muted))
+        {
+            pre_fader.insert(
+                send.from_track_id.clone(),
+                render_project_track_pre_mixer(project, &send.from_track_id, false)?.samples,
+            );
+        }
+    }
+    let any_bus_solo = project.routing.buses.iter().any(|b| b.solo);
+    let channels = 2usize;
+    // Sends are summed from the channel strips before group gain.
+    let returns: Vec<RenderedTrack> = project
+        .routing
+        .returns
+        .iter()
+        .map(|ret| {
+            let len = rendered.first().map(|t| t.samples.len()).unwrap_or(0);
+            let mut samples = vec![0.0; len];
+            if include_muted || !ret.muted {
+                for send in project
+                    .routing
+                    .sends
+                    .iter()
+                    .filter(|s| s.enabled && s.to_return_id == ret.id)
+                {
+                    if let Some(track) = rendered.iter().find(|t| t.track_id == send.from_track_id)
+                    {
+                        let source_samples = if send.pre_fader {
+                            pre_fader.get(&send.from_track_id).unwrap_or(&track.samples)
+                        } else {
+                            &track.samples
+                        };
+                        for (target, source) in samples.iter_mut().zip(source_samples) {
+                            *target += *source
+                                * send.amount.clamp(0.0, 1.0) as f32
+                                * db_to_gain(ret.gain_db);
+                        }
+                    }
+                }
+            }
+            RenderedTrack {
+                track_id: ret.id.clone(),
+                name: ret.name.clone(),
+                samples,
+                sample_rate: project.sample_rate,
+                channels: channels as u16,
+            }
+        })
+        .collect();
+    for channel in rendered.iter_mut() {
+        let track = project.tracks.iter().find(|t| t.id == channel.track_id);
+        let bus = track.and_then(|t| {
+            project.routing.buses.iter().find(|b| {
+                t.group_track_id.as_deref() == Some(b.id.as_str())
+                    || b.member_track_ids.contains(&t.id)
+            })
+        });
+        let enabled = include_muted
+            || !bus.is_some_and(|b| b.muted) && (!any_bus_solo || bus.is_some_and(|b| b.solo));
+        let gain = if enabled {
+            bus.map(|b| db_to_gain(b.gain_db)).unwrap_or(1.0)
+        } else {
+            0.0
+        };
+        for sample in &mut channel.samples {
+            *sample *= gain;
+        }
+    }
+    rendered.extend(returns);
+    Ok(())
 }
 
 /// Write interleaved float samples as a WAV with the given channel count.
@@ -674,6 +857,14 @@ pub fn write_wav(
     channels: u16,
     samples: &[f32],
 ) -> Result<(), String> {
+    if sample_rate == 0
+        || channels == 0
+        || channels > 32
+        || !samples.len().is_multiple_of(channels as usize)
+        || samples.iter().any(|s| !s.is_finite())
+    {
+        return Err("Invalid WAV format or sample data".into());
+    }
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
@@ -683,13 +874,19 @@ pub fn write_wav(
         bits_per_sample: 32,
         sample_format: SampleFormat::Float,
     };
-    let mut writer = WavWriter::create(path, spec).map_err(|e| e.to_string())?;
+    let parent = path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let mut temp = tempfile::NamedTempFile::new_in(parent).map_err(|e| e.to_string())?;
+    let mut writer = WavWriter::new(temp.as_file_mut(), spec).map_err(|e| e.to_string())?;
     for sample in samples {
-        writer
-            .write_sample(sample.clamp(-1.0, 1.0))
-            .map_err(|e| e.to_string())?;
+        writer.write_sample(*sample).map_err(|e| e.to_string())?;
     }
-    writer.finalize().map_err(|e| e.to_string())
+    writer.finalize().map_err(|e| e.to_string())?;
+    temp.as_file().sync_all().map_err(|e| e.to_string())?;
+    temp.persist(path).map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 /// Mono convenience wrapper, used by recording/engine tests.

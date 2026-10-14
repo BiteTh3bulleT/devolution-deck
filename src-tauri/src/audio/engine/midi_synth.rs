@@ -32,34 +32,48 @@ pub fn synth_midi_clip(
 ) {
     let ticks_per_sec = (bpm / 60.0) * crate::models::TICKS_PER_BEAT as f64;
     let clip_start_sample = (clip.start_secs * sample_rate as f64) as isize;
+    let loop_frames = (clip.duration_secs * sample_rate as f64).round().max(1.0) as usize;
+    let repeats = if clip.loop_clip {
+        track_buffer
+            .len()
+            .saturating_sub(clip_start_sample.max(0) as usize)
+            .div_ceil(loop_frames)
+    } else {
+        1
+    };
 
-    for note in &clip.notes {
-        let start_secs = note.start_ticks as f64 / ticks_per_sec;
-        let dur_secs = note.duration_ticks as f64 / ticks_per_sec;
-        let amp = (note.velocity as f32 / 127.0) * 0.18;
-        let note_start = clip_start_sample + (start_secs * sample_rate as f64) as isize;
-        let note_len = (dur_secs * sample_rate as f64) as usize;
+    for repeat in 0..repeats {
+        for note in &clip.notes {
+            let start_secs = note.start_ticks as f64 / ticks_per_sec;
+            let dur_secs = note.duration_ticks as f64 / ticks_per_sec;
+            let amp = (note.velocity as f32 / 127.0) * 0.18;
+            let note_start = clip_start_sample
+                + (repeat * loop_frames) as isize
+                + (start_secs * sample_rate as f64) as isize;
+            let note_len = (dur_secs.min((clip.duration_secs - start_secs).max(0.0))
+                * sample_rate as f64) as usize;
 
-        for n in 0..note_len {
-            let di = note_start + n as isize;
-            if di < 0 {
-                continue;
-            }
-            let di = di as usize;
-            if di >= track_buffer.len() {
-                break;
-            }
-            let t = n as f32 / sample_rate as f32;
-            let remaining = (note_len - n) as f32 / sample_rate as f32;
-            let envelope = attack_release(t, remaining, 0.005, 0.01);
-            let sample = match voice {
-                MidiVoice::Synth => {
-                    let freq = 440.0f32 * (2.0f32).powf((note.pitch as f32 - 69.0) / 12.0);
-                    (2.0 * std::f32::consts::PI * freq * t).sin()
+            for n in 0..note_len {
+                let di = note_start + n as isize;
+                if di < 0 {
+                    continue;
                 }
-                MidiVoice::Drums => drum_sample(note.pitch, t),
-            };
-            track_buffer[di] += sample * amp * envelope;
+                let di = di as usize;
+                if di >= track_buffer.len() {
+                    break;
+                }
+                let t = n as f32 / sample_rate as f32;
+                let remaining = (note_len - n) as f32 / sample_rate as f32;
+                let envelope = attack_release(t, remaining, 0.005, 0.01);
+                let sample = match voice {
+                    MidiVoice::Synth => {
+                        let freq = 440.0f32 * (2.0f32).powf((note.pitch as f32 - 69.0) / 12.0);
+                        (2.0 * std::f32::consts::PI * freq * t).sin()
+                    }
+                    MidiVoice::Drums => drum_sample(note.pitch, t),
+                };
+                track_buffer[di] += sample * amp * envelope;
+            }
         }
     }
 }
@@ -130,7 +144,13 @@ mod tests {
         let sr = 8000u32;
         let mut buffer = vec![0.0f32; sr as usize * 2];
         // 120 bpm: one beat = 0.5 s; note spans 0.5s..1.0s on the timeline.
-        synth_midi_clip(&mut buffer, &clip_with_note(69, 100), MidiVoice::Synth, 120.0, sr);
+        synth_midi_clip(
+            &mut buffer,
+            &clip_with_note(69, 100),
+            MidiVoice::Synth,
+            120.0,
+            sr,
+        );
 
         let before = peak(&buffer[..3500]);
         let during = peak(&buffer[4400..7600]);
@@ -143,8 +163,20 @@ mod tests {
         let sr = 8000u32;
         let mut loud = vec![0.0f32; sr as usize * 2];
         let mut quiet = vec![0.0f32; sr as usize * 2];
-        synth_midi_clip(&mut loud, &clip_with_note(69, 127), MidiVoice::Synth, 120.0, sr);
-        synth_midi_clip(&mut quiet, &clip_with_note(69, 32), MidiVoice::Synth, 120.0, sr);
+        synth_midi_clip(
+            &mut loud,
+            &clip_with_note(69, 127),
+            MidiVoice::Synth,
+            120.0,
+            sr,
+        );
+        synth_midi_clip(
+            &mut quiet,
+            &clip_with_note(69, 32),
+            MidiVoice::Synth,
+            120.0,
+            sr,
+        );
         assert!(
             peak(&loud) > peak(&quiet) * 2.0,
             "velocity must scale level: loud {} quiet {}",
@@ -158,8 +190,20 @@ mod tests {
         let sr = 8000u32;
         let mut synth = vec![0.0f32; sr as usize * 2];
         let mut drums = vec![0.0f32; sr as usize * 2];
-        synth_midi_clip(&mut synth, &clip_with_note(36, 100), MidiVoice::Synth, 120.0, sr);
-        synth_midi_clip(&mut drums, &clip_with_note(36, 100), MidiVoice::Drums, 120.0, sr);
+        synth_midi_clip(
+            &mut synth,
+            &clip_with_note(36, 100),
+            MidiVoice::Synth,
+            120.0,
+            sr,
+        );
+        synth_midi_clip(
+            &mut drums,
+            &clip_with_note(36, 100),
+            MidiVoice::Drums,
+            120.0,
+            sr,
+        );
         assert!(peak(&drums) > 0.05, "kick produced no audio");
         assert_ne!(synth, drums, "drum voice must not be the synth voice");
     }

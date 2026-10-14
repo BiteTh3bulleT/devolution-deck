@@ -1,3 +1,4 @@
+import { HardwareKnob } from "./hardware/HardwareControls";
 import { useEffect, useState } from "react";
 import * as api from "../api";
 import { useProjectStore } from "../stores/projectStore";
@@ -20,7 +21,7 @@ function MeterBar({ peak, variant = "stereo" }: { peak: number; variant?: "mono"
   return (
     <div className={`devooo-meter-bar-shell ${shellClass}`}>
       <div className="h-1.5 w-full rounded bg-deck-surface/80 overflow-hidden">
-        <div className={`h-full ${color}`} style={{ width: `${width}%` }} />
+        <div className={`devooo-meter-bar-fill h-full ${color}`} style={{ width: `${width}%` }} />
       </div>
     </div>
   );
@@ -113,7 +114,7 @@ export function MixerPanel() {
               const next = { ...project, master_gain_db: Number(event.target.value) };
               setProject(next);
               try {
-                await api.projectUpdate(next);
+                await api.projectUpdate(next, project);
               } catch {
                 // keep optimistic value; next project sync corrects drift
               }
@@ -165,31 +166,9 @@ export function MixerPanel() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 text-[10px]">
-                <label className="flex flex-col gap-1">
-                  <span className="text-deck-text-muted">Volume</span>
-                  <input
-                    type="range"
-                    min={-60}
-                    max={12}
-                    step={0.1}
-                    value={track.volume_db}
-                    className="devooo-fader-horizontal-slot-no-switch"
-                    onChange={(event) => void setTrackVolumeDb(track.id, Number(event.target.value))}
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="text-deck-text-muted">Pan</span>
-                  <input
-                    type="range"
-                    min={-1}
-                    max={1}
-                    step={0.01}
-                    value={track.pan}
-                    className="devooo-fader-horizontal-slot-no-switch"
-                    onChange={(event) => void setTrackPan(track.id, Number(event.target.value))}
-                  />
-                </label>
+              <div className="grid grid-cols-2 gap-2">
+                <HardwareKnob label={`${track.name} volume`} value={track.volume_db} min={-60} max={12} step={0.1} unit="dB" resetValue={0} onChange={v => void setTrackVolumeDb(track.id,v)} />
+                <HardwareKnob label={`${track.name} pan`} value={track.pan} min={-1} max={1} step={0.01} resetValue={0} onChange={v => void setTrackPan(track.id,v)} />
               </div>
 
               <div className="grid grid-cols-[1fr_auto] gap-2 items-center">

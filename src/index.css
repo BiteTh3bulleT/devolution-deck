@@ -1,24 +1,22 @@
-@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Space+Grotesk:wght@400;500;600&display=swap");
-@import "./styles/devooo-skin.css";
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "./styles/hardware.css";
+@import "./styles/cosmic.css";
+@config "../tailwind.config.js";
 
 :root {
-  --deck-bg: #07090f;
-  --deck-surface: #101522;
-  --deck-panel: #131a2a;
-  --deck-border: #1f2a40;
-  --deck-muted: #2a2a34;
-  --deck-graphite: #3a3a46;
-  --deck-text: #e8edf8;
-  --deck-text-muted: #95a3bf;
-  --deck-accent: #ff6b1a;
-  --deck-accent-dim: #c75112;
-  --deck-cyan: #38d7ff;
-  --deck-magenta: #ff4fd8;
-  --deck-amber: #ffc247;
+  --deck-bg: #090513;
+  --deck-surface: #130c24;
+  --deck-panel: #201331;
+  --deck-border: #543567;
+  --deck-muted: #332143;
+  --deck-graphite: #664778;
+  --deck-text: #f3eefe;
+  --deck-text-muted: #b8a8ce;
+  --deck-accent: #bfed7b;
+  --deck-accent-dim: #789b44;
+  --deck-cyan: #70e7f4;
+  --deck-magenta: #f590d8;
+  --deck-amber: #ffd17d;
 }
 
 * {

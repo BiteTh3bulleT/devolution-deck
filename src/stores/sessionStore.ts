@@ -131,7 +131,7 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
     if (!project) return;
     const ensured = ensureSession(project);
     if (ensured === project) return;
-    await api.projectUpdate(ensured);
+    await api.projectUpdate(ensured, project);
     await useProjectStore.getState().load();
     set({ selectedSceneId: ensured.session.scenes[0]?.id ?? null });
   },
@@ -148,7 +148,7 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
         scenes: [...next.session.scenes, scene],
       },
     };
-    await api.projectUpdate(updated);
+    await api.projectUpdate(updated, project);
     await useProjectStore.getState().load();
     set({ selectedSceneId: scene.id });
   },
@@ -190,7 +190,7 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
         `${track.name} Cell`
       );
     }
-    await api.projectUpdate(updated);
+    await api.projectUpdate(updated, project);
     await useProjectStore.getState().load();
   },
 
@@ -211,7 +211,7 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
       asset.duration_secs,
       asset.name
     );
-    await api.projectUpdate(updated);
+    await api.projectUpdate(updated, project);
     await useProjectStore.getState().load();
   },
 
@@ -227,7 +227,7 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
         ),
       },
     };
-    await api.projectUpdate(updated);
+    await api.projectUpdate(updated, project);
     await useProjectStore.getState().load();
   },
 
@@ -294,7 +294,7 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
       },
     };
 
-    await api.projectUpdate(updated);
+    await api.projectUpdate(updated, project);
     await useProjectStore.getState().load();
     set({
       selectedSceneId: sceneId,
@@ -302,5 +302,6 @@ export const useSessionStore = create<SessionStoreState>((set) => ({
       queuedLaunchAtSecs: null,
       isLaunching: false,
     });
+    if (transport.status === "stopped") await useTransportStore.getState().play(launchAt);
   },
 }));

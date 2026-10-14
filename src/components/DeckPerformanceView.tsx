@@ -1,4 +1,5 @@
-import { useMemo, useState } from "react";
+import * as api from "../api";
+import { useEffect, useMemo, useState } from "react";
 import { DeckChannelCard } from "./deck/DeckChannelCard";
 import { LibraryCratesPanel } from "./deck/LibraryCratesPanel";
 import { LiveCoordinationPanel } from "./deck/LiveCoordinationPanel";
@@ -16,7 +17,26 @@ async function runWithError(action: () => Promise<unknown>, onError: (message: s
 }
 
 export function DeckPerformanceView() {
+  const [touchLayout, setTouchLayout] = useState(true);
+  const updateDeckDsp = useDjStore(state => state.updateDeckDsp);
   const project = useProjectStore((state) => state.project);
+  const [telemetry, setTelemetry] = useState<api.DeckPerformanceStatus | null>(null);
+  const [clockError, setClockError] = useState<string | null>(null);
+  useEffect(() => {
+    let disposed = false; let pending = false;
+    const refresh = async () => {
+      if (pending || disposed) return;
+      pending = true;
+      try {
+        const status = await api.deckPerformanceStatus();
+        if (!disposed) { setTelemetry(status); setClockError(null); }
+      } catch (error) { if (!disposed) setClockError(String(error)); }
+      finally { pending = false; }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 50);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [project?.id]);
 
   const selectedCrateId = useDjStore((state) => state.selectedCrateId);
   const selectedSetlistId = useDjStore((state) => state.selectedSetlistId);
@@ -31,6 +51,7 @@ export function DeckPerformanceView() {
   const removeItemFromCrate = useDjStore((state) => state.removeItemFromCrate);
 
   const loadDeckTrack = useDjStore((state) => state.loadDeckTrack);
+  const setHeadphoneCue = useDjStore(state => state.setHeadphoneCue);
   const setDeckPlaying = useDjStore((state) => state.setDeckPlaying);
   const seekDeck = useDjStore((state) => state.seekDeck);
   const turntableNudge = useDjStore((state) => state.turntableNudge);
@@ -79,7 +100,11 @@ export function DeckPerformanceView() {
     }
   };
 
-  const decks = project?.decks ?? [];
+  const currentTelemetry = telemetry?.project_id === project?.id ? telemetry : null;
+  const decks = (project?.decks ?? []).map(deck => {
+    const live = currentTelemetry?.decks.find(d => d.id === deck.id);
+    return live ? { ...deck, position_secs:live.position_secs, playing:live.playing, beat_phase:live.beat_phase } : deck;
+  });
   const deckA = decks.find((deck) => deck.id === "A") ?? decks[0];
   const deckB = decks.find((deck) => deck.id === "B") ?? decks[1];
 
@@ -102,8 +127,17 @@ export function DeckPerformanceView() {
   const bindingByTrack = new Map(project.crossfader.track_bindings.map((entry) => [entry.track_id, entry.side]));
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto bg-[radial-gradient(circle_at_0%_0%,rgba(56,215,255,0.12),transparent_38%),radial-gradient(circle_at_100%_0%,rgba(255,107,26,0.12),transparent_42%)] p-4">
+    <div className={`deck-decks ${touchLayout ? "touch-performance" : ""} flex-1 min-h-0 overflow-auto p-4`}>
       <div className="max-w-[1500px] mx-auto space-y-4">
+        <button type="button" aria-pressed={touchLayout} onClick={()=>setTouchLayout(!touchLayout)} className="touch-layout-toggle">{touchLayout ? 'Touch layout • show studio panels' : 'Enable touch layout'}</button>
+        <section className="deck-lcd flex flex-wrap items-center gap-4 text-xs" aria-label="Live audio clock and bus meters">
+          <span>Audio clock {((currentTelemetry?.snapshot?.engine_frame ?? 0) / 48000).toFixed(3)} s</span>
+          <span>Queued cues {currentTelemetry?.scheduled_count ?? 0}</span>
+          <span>{currentTelemetry?.playing ? "Output running" : "Output stopped"}</span>
+          <label>Main peak <meter aria-label="Main output peak" min={0} max={1} value={currentTelemetry?.snapshot?.main_peak ?? 0} /></label>
+          <label>Cue peak <meter aria-label="Headphone cue peak" min={0} max={1} value={currentTelemetry?.snapshot?.cue_peak ?? 0} /></label>
+          {clockError && <span role="alert">{clockError}</span>}
+        </section>
         <section className="rounded border border-deck-border bg-deck-panel/85 p-3 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <div>
@@ -260,10 +294,11 @@ export function DeckPerformanceView() {
           </div>
         </section>
 
-        <div className="grid xl:grid-cols-2 gap-4">
+        <div className="deck-platter-grid grid md:grid-cols-2 gap-5">
           <DeckChannelCard
             deck={deckA}
             loadedItem={loadedA}
+            onHeadphoneCue={(id, enabled) => runWithError(() => setHeadphoneCue(id, enabled), setError)}
             onTogglePlay={(deckId, playing) => runWithError(() => setDeckPlaying(deckId, playing), setError)}
             onSeek={(deckId, positionSecs) => runWithError(() => seekDeck(deckId, positionSecs), setError)}
             onNudge={(deckId, deltaBeats) => runWithError(() => turntableNudge(deckId, deltaBeats), setError)}
@@ -278,13 +313,15 @@ export function DeckPerformanceView() {
             }
             onClearLoop={(deckId) => runWithError(() => clearDeckLoop(deckId), setError)}
             onAddHotCue={(deckId, positionSecs) => runWithError(() => addHotCue(deckId, positionSecs), setError)}
-            onTriggerCue={(deckId, cueId) => runWithError(() => triggerHotCue(deckId, cueId), setError)}
+            onDspUpdate={(id,patch) => runWithError(()=>updateDeckDsp(id,patch),setError)}
+            onTriggerCue={(deckId, cueId, grid) => runWithError(() => triggerHotCue(deckId, cueId, grid), setError)}
             onRemoveCue={(deckId, cueId) => runWithError(() => removeHotCue(deckId, cueId), setError)}
           />
 
           <DeckChannelCard
             deck={deckB}
             loadedItem={loadedB}
+            onHeadphoneCue={(id, enabled) => runWithError(() => setHeadphoneCue(id, enabled), setError)}
             onTogglePlay={(deckId, playing) => runWithError(() => setDeckPlaying(deckId, playing), setError)}
             onSeek={(deckId, positionSecs) => runWithError(() => seekDeck(deckId, positionSecs), setError)}
             onNudge={(deckId, deltaBeats) => runWithError(() => turntableNudge(deckId, deltaBeats), setError)}
@@ -299,7 +336,8 @@ export function DeckPerformanceView() {
             }
             onClearLoop={(deckId) => runWithError(() => clearDeckLoop(deckId), setError)}
             onAddHotCue={(deckId, positionSecs) => runWithError(() => addHotCue(deckId, positionSecs), setError)}
-            onTriggerCue={(deckId, cueId) => runWithError(() => triggerHotCue(deckId, cueId), setError)}
+            onDspUpdate={(id,patch) => runWithError(()=>updateDeckDsp(id,patch),setError)}
+            onTriggerCue={(deckId, cueId, grid) => runWithError(() => triggerHotCue(deckId, cueId, grid), setError)}
             onRemoveCue={(deckId, cueId) => runWithError(() => removeHotCue(deckId, cueId), setError)}
           />
         </div>

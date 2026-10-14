@@ -10,6 +10,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Timeline } from "./components/Timeline";
 import { TransportBar } from "./components/TransportBar";
 import { UtilityPanel } from "./components/UtilityPanel";
+import { AudioLabView } from "./components/AudioLabView";
 import { metronomeService } from "./services/metronome";
 import { useArrangementStore } from "./stores/arrangementStore";
 import { useBrowserStore } from "./stores/browserStore";
@@ -37,8 +38,8 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 function isKnownMainView(
   value: string
-): value is "arrangement" | "session" | "decks" | "performance" {
-  return value === "arrangement" || value === "session" || value === "decks" || value === "performance";
+): value is "arrangement" | "session" | "decks" | "performance" | "lab" {
+  return value === "arrangement" || value === "session" || value === "decks" || value === "performance" || value === "lab";
 }
 
 function isKnownUtilityTab(value: string): boolean {
@@ -81,6 +82,9 @@ export default function App() {
   useEffect(() => {
     if (!tauriRuntime) return;
     void load();
+    const onAudioError = (event: Event) => useProjectStore.setState({ error: (event as CustomEvent<string>).detail });
+    window.addEventListener("deck-audio-error", onAudioError);
+    return () => window.removeEventListener("deck-audio-error", onAudioError);
   }, [load, tauriRuntime]);
 
   useEffect(() => {
@@ -162,12 +166,19 @@ export default function App() {
       void api.recoverySnapshotSave("autosave");
     }, intervalSecs * 1000);
     return () => window.clearInterval(timerId);
-  }, [project?.autosave_interval_secs, project, tauriRuntime]);
+  }, [project?.autosave_interval_secs, project?.id, tauriRuntime]);
 
   useEffect(() => {
     const root = document.documentElement;
     if (!project) return;
-    const theme = project.branding.theme;
+    const savedTheme = project.branding.theme;
+    const stockThemes = [
+      { bg_hex:"#07090f",surface_hex:"#101522",panel_hex:"#131a2a",border_hex:"#1f2a40",text_hex:"#e8edf8",text_muted_hex:"#95a3bf",accent_hex:"#ff6b1a",cyan_hex:"#38d7ff",magenta_hex:"#ff4fd8",amber_hex:"#ffc247" },
+      { bg_hex:"#0b1015",surface_hex:"#141c23",panel_hex:"#1b252e",border_hex:"#34424c",text_hex:"#dce5ea",text_muted_hex:"#98aab5",accent_hex:"#e4a75f",cyan_hex:"#7ccbd0",magenta_hex:"#b69ecb",amber_hex:"#edbc77" },
+    ];
+    const theme = stockThemes.some(stock => Object.entries(stock).every(([key, color]) => savedTheme[key as keyof typeof savedTheme] === color))
+      ? { ...savedTheme, bg_hex:"#090513",surface_hex:"#130c24",panel_hex:"#201331",border_hex:"#543567",text_hex:"#f3eefe",text_muted_hex:"#b8a8ce",accent_hex:"#bfed7b",cyan_hex:"#70e7f4",magenta_hex:"#f590d8",amber_hex:"#ffd17d" }
+      : savedTheme;
     root.style.setProperty("--deck-bg", theme.bg_hex);
     root.style.setProperty("--deck-surface", theme.surface_hex);
     root.style.setProperty("--deck-panel", theme.panel_hex);
@@ -196,7 +207,7 @@ export default function App() {
         switch (action) {
           case "transport_play_stop": {
             const transport = useTransportStore.getState();
-            if (transport.status === "playing") {
+            if (transport.status !== "stopped") {
               await transport.stop();
               metronomeService.stop();
               return;
@@ -206,7 +217,7 @@ export default function App() {
 
             await transport.play(transport.positionSecs);
 
-            if (useMetronomeStore.getState().enabled) {
+            if (useMetronomeStore.getState().enabled && useTransportStore.getState().status === "playing") {
               metronomeService.setEnabled(true);
               metronomeService.start(transport.positionSecs, currentProject.bpm);
             }
@@ -316,7 +327,7 @@ export default function App() {
                   : track
               ),
             };
-            await api.projectUpdate(updatedProject);
+            await api.projectUpdate(updatedProject, currentProject);
             useArrangementStore.getState().clearAudioClipSelection();
             await useProjectStore.getState().load();
             return;
@@ -349,20 +360,21 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-deck-bg text-deck-text font-sans">
+    <div className="deck-app flex flex-col h-full bg-deck-bg text-deck-text font-sans">
       <TransportBar />
       <AppStatusStrip />
       <div className="flex flex-1 min-h-0 relative">
-        <Sidebar />
-        <div className="flex flex-1 flex-col min-w-0 relative">
+        {mainView !== "lab" && <Sidebar />}
+        <div className="deck-workspace flex flex-1 flex-col min-w-0 relative">
           {mainView === "arrangement" && <Timeline />}
           {mainView === "session" && <SessionLauncher />}
           {mainView === "decks" && <DeckPerformanceView />}
           {mainView === "performance" && <PerformanceModeView />}
+          {mainView === "lab" && <AudioLabView />}
           {openClip && <PianoRoll />}
           {openDrumTrack && <DrumSequencer track={openDrumTrack} onClose={closeDrumSequencer} />}
         </div>
-        <UtilityPanel />
+        {mainView !== "lab" && <UtilityPanel />}
       </div>
     </div>
   );

@@ -4,7 +4,10 @@ use crate::models::midi::{MidiClip, MidiNote};
 use serde::{Deserialize, Serialize};
 
 /// Project file schema version. Bump when persistence format changes.
-pub const PROJECT_SCHEMA_VERSION: u32 = 8;
+pub const PROJECT_SCHEMA_VERSION: u32 = 10;
+fn default_project_id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
 
 fn default_track_volume_db() -> f64 {
     0.0
@@ -64,7 +67,7 @@ impl Default for WarpState {
             enabled: false,
             source_bpm: None,
             target_bpm: None,
-            algorithm: "elastique_pro".to_string(),
+            algorithm: "wsola".to_string(),
             preserve_formants: true,
         }
     }
@@ -507,16 +510,16 @@ pub struct ThemeTokenSet {
 impl Default for ThemeTokenSet {
     fn default() -> Self {
         Self {
-            bg_hex: "#07090f".to_string(),
-            surface_hex: "#101522".to_string(),
-            panel_hex: "#131a2a".to_string(),
-            border_hex: "#1f2a40".to_string(),
-            text_hex: "#e8edf8".to_string(),
-            text_muted_hex: "#95a3bf".to_string(),
-            accent_hex: "#ff6b1a".to_string(),
-            cyan_hex: "#38d7ff".to_string(),
-            magenta_hex: "#ff4fd8".to_string(),
-            amber_hex: "#ffc247".to_string(),
+            bg_hex: "#090513".to_string(),
+            surface_hex: "#130c24".to_string(),
+            panel_hex: "#201331".to_string(),
+            border_hex: "#543567".to_string(),
+            text_hex: "#f3eefe".to_string(),
+            text_muted_hex: "#b8a8ce".to_string(),
+            accent_hex: "#bfed7b".to_string(),
+            cyan_hex: "#70e7f4".to_string(),
+            magenta_hex: "#f590d8".to_string(),
+            amber_hex: "#ffd17d".to_string(),
         }
     }
 }
@@ -664,6 +667,8 @@ pub struct DeckState {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub loaded_track: Option<DeckTrackReference>,
     pub playing: bool,
+    #[serde(default)]
+    pub headphone_cue: bool,
     pub position_secs: f64,
     pub tempo_bpm: f64,
     pub tempo_multiplier: f64,
@@ -686,6 +691,7 @@ impl DeckState {
             id: id.to_string(),
             loaded_track: None,
             playing: false,
+            headphone_cue: false,
             position_secs: 0.0,
             tempo_bpm,
             tempo_multiplier: 1.0,
@@ -1785,6 +1791,8 @@ impl Default for SystemHealthSnapshot {
 /// Root project container. Persisted to disk as JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
+    #[serde(default = "default_project_id")]
+    pub id: String,
     pub version: u32,
     pub title: String,
     pub bpm: f64,
@@ -1951,6 +1959,7 @@ impl Default for Project {
     fn default() -> Self {
         Self {
             version: PROJECT_SCHEMA_VERSION,
+            id: default_project_id(),
             title: "Untitled".to_string(),
             bpm: 120.0,
             sample_rate: 44100,

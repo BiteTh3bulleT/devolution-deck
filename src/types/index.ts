@@ -810,6 +810,7 @@ export interface DeckTrackReference {
 }
 
 export interface DeckState {
+  headphone_cue: boolean;
   id: string;
   loaded_track?: DeckTrackReference;
   playing: boolean;
@@ -1178,6 +1179,7 @@ export const DEFAULT_DRUM_PITCHES: { pitch: number; label: string }[] = [
 ];
 
 export interface Project {
+  id: string;
   version: number;
   title: string;
   bpm: number;
@@ -1239,4 +1241,4 @@ export interface Project {
 // Recording
 // ---------------------------------------------------------------------------
 
-export type RecordingStatus = "idle" | "count_in" | "recording" | "stopping";
+export type RecordingStatus = "idle" | "count_in" | "starting" | "recording" | "stopping";

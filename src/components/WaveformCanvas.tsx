@@ -6,8 +6,6 @@ interface WaveformCanvasProps {
   height: number;
 }
 
-const WAVEFORM_FILL = "rgba(124, 58, 237, 0.4)";
-const WAVEFORM_STROKE = "rgba(124, 58, 237, 0.8)";
 
 export function WaveformCanvas({ buckets, width, height }: WaveformCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -30,8 +28,8 @@ export function WaveformCanvas({ buckets, width, height }: WaveformCanvasProps) 
     const midY = height / 2;
     const bucketWidth = width / buckets.length;
 
-    ctx.fillStyle = WAVEFORM_FILL;
-    ctx.strokeStyle = WAVEFORM_STROKE;
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue("--deck-cyan").trim() || "#7ccbd0";
+    ctx.globalAlpha = 0.65;
     ctx.lineWidth = 1;
 
     buckets.forEach((b, i) => {
@@ -47,6 +45,7 @@ export function WaveformCanvas({ buckets, width, height }: WaveformCanvasProps) 
   return (
     <canvas
       ref={canvasRef}
+      role="img" aria-label="Audio clip waveform"
       className="w-full h-full block"
       style={{ width, height }}
     />

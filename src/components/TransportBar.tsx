@@ -1,3 +1,4 @@
+import cosmicLogo from "../assets/ui/v5/devooo-logo.png";
 import { useProjectStore } from "../stores/projectStore";
 import { useTransportStore } from "../stores/transportStore";
 import { useLoopStore } from "../stores/loopStore";
@@ -161,7 +162,7 @@ export function TransportBar() {
     if (!tauriRuntime) return;
     if (!project) return;
     await play(positionSecs);
-    if (metronomeEnabled) {
+    if (metronomeEnabled && useTransportStore.getState().status === "playing") {
       metronomeService.setEnabled(true);
       metronomeService.start(positionSecs, project?.bpm ?? 120);
     }
@@ -194,15 +195,15 @@ export function TransportBar() {
   }, [error, clearError]);
 
   return (
-    <header className="relative flex items-center gap-2 h-12 px-3 bg-deck-panel border-b border-deck-border shrink-0 overflow-hidden before:absolute before:inset-0 before:bg-[linear-gradient(90deg,rgba(255,107,26,0.12),transparent_35%,rgba(56,215,255,0.1))] before:pointer-events-none">
+    <header className="deck-transport relative flex items-center gap-2 px-3 border-b border-deck-border shrink-0">
       {/* Transport controls */}
       <div className="flex items-center gap-1.5 shrink-0">
         <button
           type="button"
           onClick={handlePlay}
-          disabled={status === "playing"}
+          disabled={status !== "stopped"}
           className="w-9 h-9 rounded bg-deck-accent hover:bg-deck-accent-dim disabled:opacity-50 flex items-center justify-center text-deck-bg font-display font-semibold"
-          title="Play"
+          title="Play" aria-label="Play"
         >
           ▶
         </button>
@@ -210,7 +211,7 @@ export function TransportBar() {
           type="button"
           onClick={handleStop}
           className="w-9 h-9 rounded bg-deck-muted hover:bg-deck-graphite flex items-center justify-center text-deck-text"
-          title="Stop"
+          title="Stop" aria-label="Stop"
         >
           ■
         </button>
@@ -255,9 +256,10 @@ export function TransportBar() {
       <MetronomeWidget />
 
       {/* Title */}
-      <div className="flex-1 min-w-0 px-2">
+      <div className="cosmic-title flex-1 min-w-0 px-2">
+        <img src={cosmicLogo} alt="DEVOOO" className="cosmic-transport-logo" width={120} height={40} />
         <span className="font-display font-semibold text-deck-text truncate block text-sm">
-          {project?.branding.logo_text ?? "DΞVOLUTION"} · {project?.title ?? "Untitled"}
+          {project?.title ?? "Untitled"}
         </span>
         <span className="text-[10px] text-deck-text-muted truncate block">
           {project?.branding.artist_name ?? "DJ Devooo"} · {project?.branding.motto ?? "Artist Operating System"}

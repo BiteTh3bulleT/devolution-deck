@@ -10,7 +10,7 @@ function buildWarp(clipWarp: WarpState | undefined, projectBpm: number): WarpSta
       enabled: true,
       source_bpm: projectBpm,
       target_bpm: projectBpm,
-      algorithm: "elastique_pro",
+      algorithm: "wsola",
       preserve_formants: true,
     }
   );

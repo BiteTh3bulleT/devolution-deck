@@ -3,7 +3,7 @@ import { create } from "zustand";
 /** Pixels per second of timeline (zoom). */
 const DEFAULT_PPX = 80;
 
-export type DeckMainView = "arrangement" | "session" | "decks" | "performance";
+export type DeckMainView = "arrangement" | "session" | "decks" | "performance" | "lab";
 export type UtilityTab =
   | "inspector"
   | "mixer"

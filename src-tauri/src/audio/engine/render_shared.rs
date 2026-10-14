@@ -12,7 +12,11 @@ pub struct ArrangementMixdownBuffer {
 }
 
 fn clip_sample(value: f32) -> f32 {
-    value.clamp(-1.0, 1.0)
+    if value.is_finite() {
+        value
+    } else {
+        0.0
+    }
 }
 
 fn db_to_gain(db: f64) -> f32 {

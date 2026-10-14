@@ -1,3 +1,4 @@
+import { AudioEnginePanel } from "./AudioEnginePanel";
 import { useEffect, useState } from "react";
 import * as api from "../api";
 import type { MonitoringState, RecoverySnapshot } from "../types";
@@ -44,15 +45,17 @@ export function SystemPanel() {
 
   return (
     <div className="space-y-3">
+      <AudioEnginePanel />
       <h3 className="text-xs uppercase tracking-widest text-deck-cyan">Monitoring / Recovery / System</h3>
 
       <div className="rounded border border-deck-border bg-deck-panel p-2 space-y-2">
-        <p className="text-[11px] uppercase tracking-wide text-deck-text-muted">Low-Latency Monitoring</p>
+        <p className="text-[11px] uppercase tracking-wide text-deck-text-muted">Capture preferences</p>
 
         <label className="text-[11px] text-deck-text-muted flex items-center gap-2">
           <input
             type="checkbox"
-            checked={monitoring.input_monitoring_enabled}
+            disabled
+            checked={false}
             onChange={(event) =>
               setMonitoring((prev) =>
                 prev
@@ -64,7 +67,7 @@ export function SystemPanel() {
               )
             }
           />
-          Input monitoring enabled
+          Software input monitoring (planned)
         </label>
 
         <label className="text-[11px] text-deck-text-muted flex items-center gap-2">
@@ -87,7 +90,7 @@ export function SystemPanel() {
 
         <div className="grid grid-cols-2 gap-2 text-[11px]">
           <label className="text-deck-text-muted flex flex-col gap-1">
-            Target Buffer (ms)
+            Recording queue target (ms)
             <input
               type="number"
               min={8}
@@ -108,7 +111,7 @@ export function SystemPanel() {
             />
           </label>
           <label className="text-deck-text-muted flex flex-col gap-1">
-            Latency Compensation (ms)
+            Stored compensation preference (ms)
             <input
               type="number"
               min={0}
@@ -147,7 +150,7 @@ export function SystemPanel() {
           }}
           className="w-full rounded border border-deck-cyan/40 bg-deck-cyan/10 text-deck-cyan text-[11px] px-2 py-1 disabled:opacity-50"
         >
-          Apply Monitoring Settings
+          Save Capture Preferences
         </button>
       </div>
 
@@ -250,6 +253,7 @@ export function SystemPanel() {
                     setError(null);
                     try {
                       await api.recoverySnapshotRestore(snapshot.path);
+                      useProjectStore.getState().setProjectPath(null);
                       await load();
                     } catch (e) {
                       setError(String(e));

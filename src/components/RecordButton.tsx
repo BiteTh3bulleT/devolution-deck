@@ -22,7 +22,7 @@ export function RecordButton() {
       await stopRecording();
       return;
     }
-    if (status === "stopping") return;
+    if ((status === "stopping" || status === "starting")) return;
     // Record onto the armed audio track; arm the first audio track if none is armed.
     const audioTracks = project?.tracks.filter((t) => t.track_type === "audio") ?? [];
     const targetTrack = audioTracks.find((t) => t.armed) ?? audioTracks[0];
@@ -42,7 +42,7 @@ export function RecordButton() {
       ? "Count in…"
       : status === "recording"
       ? "● REC"
-      : status === "stopping"
+      : (status === "stopping" || status === "starting")
       ? "Stopping…"
       : "● Arm";
 
@@ -50,7 +50,7 @@ export function RecordButton() {
     <button
       type="button"
       onClick={handleClick}
-      disabled={status === "stopping"}
+      disabled={(status === "stopping" || status === "starting")}
       className={[
         "px-3 py-1.5 rounded text-sm font-mono transition-colors",
         status === "recording"
@@ -58,7 +58,7 @@ export function RecordButton() {
           : status === "count_in"
           ? "bg-red-900/60 text-red-300 border border-red-700/50"
           : "bg-deck-muted hover:bg-red-900/50 text-deck-text-muted hover:text-red-300 border border-deck-border",
-        status === "stopping" ? "opacity-50 cursor-not-allowed" : "",
+        (status === "stopping" || status === "starting") ? "opacity-50 cursor-not-allowed" : "",
       ].join(" ")}
       title="Record audio (requires input device)"
     >

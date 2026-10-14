@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { documentDir, join } from "@tauri-apps/api/path";
+import { useEffect, useMemo, useState } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
 import { useProjectStore } from "../stores/projectStore";
 import { useTransportStore } from "../stores/transportStore";
 
-const DEFAULT_EXPORT_DIR = "/tmp/devolution_deck_exports";
+
 
 function formatTime(unixMs: number): string {
   return new Date(unixMs).toLocaleString();
@@ -12,10 +13,9 @@ function formatTime(unixMs: number): string {
 
 export function RenderPanel() {
   const project = useProjectStore((s) => s.project);
-  const setProject = useProjectStore((s) => s.setProject);
   const positionSecs = useTransportStore((s) => s.positionSecs);
 
-  const [outputDir, setOutputDir] = useState(DEFAULT_EXPORT_DIR);
+  const [outputDir, setOutputDir] = useState("");
   const [trackId, setTrackId] = useState("");
   const [rangeStart, setRangeStart] = useState(0);
   const [rangeEnd, setRangeEnd] = useState(8);
@@ -26,6 +26,8 @@ export function RenderPanel() {
   const [mixdownUseRange, setMixdownUseRange] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => { void documentDir().then(dir => join(dir, "DEVOLUTION DECK", "Exports")).then(setOutputDir).catch(e => setError(String(e))); }, []);
 
   const tracks = project?.tracks ?? [];
   const selectedTrack = useMemo(() => tracks.find((track) => track.id === trackId), [tracks, trackId]);
@@ -102,19 +104,13 @@ export function RenderPanel() {
             setBusy("mixdown");
             setError(null);
             try {
-              const job = await api.mixdownExportStart({
+              await api.mixdownExportStart({
                 output_dir: outputDir,
                 file_name: mixdownFileName.trim() || undefined,
                 start_secs: mixdownUseRange ? rangeStart : undefined,
                 end_secs: mixdownUseRange ? rangeEnd : undefined,
               });
-              if (project) {
-                const nextJobs = [...project.render_jobs, job].slice(-400);
-                setProject({
-                  ...project,
-                  render_jobs: nextJobs,
-                });
-              }
+              await useProjectStore.getState().load();
             } catch (e) {
               setError(String(e));
             } finally {
@@ -161,19 +157,13 @@ export function RenderPanel() {
             setBusy("stem");
             setError(null);
             try {
-              const job = await api.stemExportStart({
+              await api.stemExportStart({
                 output_dir: outputDir,
                 include_muted: includeMuted,
                 skip_silent_tracks: skipSilentTracks,
                 filename_prefix: filenamePrefix.trim() || undefined,
               });
-              if (project) {
-                const nextJobs = [...project.render_jobs, job].slice(-400);
-                setProject({
-                  ...project,
-                  render_jobs: nextJobs,
-                });
-              }
+              await useProjectStore.getState().load();
             } catch (e) {
               setError(String(e));
             } finally {
@@ -241,15 +231,8 @@ export function RenderPanel() {
               setBusy("freeze");
               setError(null);
             try {
-                const updatedTrack = await api.trackFreeze(selectedTrack.id, outputDir);
-                if (project) {
-                  setProject({
-                    ...project,
-                    tracks: project.tracks.map((track) =>
-                      track.id === updatedTrack.id ? updatedTrack : track
-                    ),
-                  });
-                }
+                await api.trackFreeze(selectedTrack.id, outputDir);
+                await useProjectStore.getState().load();
               } catch (e) {
                 setError(String(e));
               } finally {
@@ -268,15 +251,8 @@ export function RenderPanel() {
               setBusy("unfreeze");
               setError(null);
             try {
-                const updatedTrack = await api.trackUnfreeze(selectedTrack.id);
-                if (project) {
-                  setProject({
-                    ...project,
-                    tracks: project.tracks.map((track) =>
-                      track.id === updatedTrack.id ? updatedTrack : track
-                    ),
-                  });
-                }
+                await api.trackUnfreeze(selectedTrack.id);
+                await useProjectStore.getState().load();
               } catch (e) {
                 setError(String(e));
               } finally {
@@ -295,20 +271,13 @@ export function RenderPanel() {
               setBusy("rip");
               setError(null);
             try {
-                const updatedTrack = await api.trackRenderInPlace(
+                await api.trackRenderInPlace(
                   selectedTrack.id,
                   rangeStart,
                   rangeEnd,
                   outputDir
                 );
-                if (project) {
-                  setProject({
-                    ...project,
-                    tracks: project.tracks.map((track) =>
-                      track.id === updatedTrack.id ? updatedTrack : track
-                    ),
-                  });
-                }
+                await useProjectStore.getState().load();
               } catch (e) {
                 setError(String(e));
               } finally {

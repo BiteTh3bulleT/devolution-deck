@@ -1,0 +1,15 @@
+{
+  "generator": "Blender",
+  "version": "5.2.0 LTS",
+  "source": "design/blender/devolution-cosmic-controls.blend",
+  "script": "design/blender/render_cosmic_controls.py",
+  "assets": [
+    "knob-cap.png",
+    "knob-bezel.png",
+    "jog-dial.png",
+    "button-idle.png",
+    "button-pressed.png",
+    "button-amber.png",
+    "fader-cap.png"
+  ]
+}

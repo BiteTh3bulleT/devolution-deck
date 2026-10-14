@@ -23,8 +23,8 @@ function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
 }
 
-function updateProject(next: Project): Promise<Project> {
-  return api.projectUpdate(next);
+function updateProject(next: Project, baseline: Project): Promise<Project> {
+  return api.projectUpdate(next, baseline);
 }
 
 function defaultReturn(index: number, name?: string): ReturnTrack {
@@ -51,7 +51,7 @@ function defaultBus(index: number, name?: string): BusTrack {
 function patchProject(mutator: (project: Project) => Project): Promise<void> {
   const project = useProjectStore.getState().project;
   if (!project) return Promise.resolve();
-  return updateProject(mutator(project)).then(() => useProjectStore.getState().load());
+  return updateProject(mutator(project), project).then(() => useProjectStore.getState().load());
 }
 
 export const useMixerStore = create<MixerStoreState>(() => ({

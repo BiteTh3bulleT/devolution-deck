@@ -13,16 +13,16 @@
 }
 
 .devooo-utility-tab-active {
-  background-image: url("../assets/ui/devooo/utility/utility_tab_button_active_blank.png");
+  background-image: url("/src/assets/ui/devooo/utility/utility_tab_button_active_blank.png");
 }
 
 .devooo-utility-tab-inactive {
-  background-image: url("../assets/ui/devooo/utility/utility_tab_button_inactive_blank.png");
+  background-image: url("/src/assets/ui/devooo/utility/utility_tab_button_inactive_blank.png");
 }
 
 .devooo-utility-tab-hover,
 .devooo-utility-tab-inactive:hover {
-  background-image: url("../assets/ui/devooo/utility/utility_tab_button_hover_blank.png");
+  background-image: url("/src/assets/ui/devooo/utility/utility_tab_button_hover_blank.png");
   color: var(--deck-cyan);
 }
 
@@ -75,91 +75,91 @@
 .devooo-inspector-shell::before {
   background-image:
     linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.68)),
-    url("../assets/ui/devooo/inspector/inspector_tab_full_blank_shell_340x900.png");
+    url("/src/assets/ui/devooo/inspector/inspector_tab_full_blank_shell_340x900.png");
 }
 
 .devooo-mixer-shell::before {
   background-image:
     linear-gradient(rgba(7, 9, 15, 0.46), rgba(7, 9, 15, 0.7)),
-    url("../assets/ui/devooo/mixer/mixer_tab_full_blank_shell_340x900.png");
+    url("/src/assets/ui/devooo/mixer/mixer_tab_full_blank_shell_340x900.png");
 }
 
 .devooo-plugins-shell::before {
   background-image:
     linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
-    url("../assets/ui/devooo/plugins/plugins_tab_full_blank_shell_340x900.png");
+    url("/src/assets/ui/devooo/plugins/plugins_tab_full_blank_shell_340x900.png");
 }
 
 .devooo-automation-shell::before {
   background-image:
     linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
-    url("../assets/ui/devooo/automation/automation_tab_full_blank_shell_340x900.png");
+    url("/src/assets/ui/devooo/automation/automation_tab_full_blank_shell_340x900.png");
 }
 
 .devooo-render-shell::before {
   background-image:
     linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
-    url("../assets/ui/devooo/render/render_tab_full_blank_shell_340x900.png");
+    url("/src/assets/ui/devooo/render/render_tab_full_blank_shell_340x900.png");
 }
 
 .devooo-comping-shell::before {
   background-image:
     linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
-    url("../assets/ui/devooo/comping/comping_tab_full_blank_shell_340x900.png");
+    url("/src/assets/ui/devooo/comping/comping_tab_full_blank_shell_340x900.png");
 }
 
 .devooo-system-shell::before {
   background-image:
     linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
-    url("../assets/ui/devooo/system/system_tab_full_blank_shell_340x900.png");
+    url("/src/assets/ui/devooo/system/system_tab_full_blank_shell_340x900.png");
 }
 
 .devooo-shortcuts-shell::before {
   background-image:
     linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
-    url("../assets/ui/devooo/shortcuts/shortcuts_tab_full_blank_shell_340x900.png");
+    url("/src/assets/ui/devooo/shortcuts/shortcuts_tab_full_blank_shell_340x900.png");
 }
 
 .devooo-assistant-shell::before {
   background-image:
     linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
-    url("../assets/ui/devooo/assistant/assistant_tab_full_blank_shell_340x900.png");
+    url("/src/assets/ui/devooo/assistant/assistant_tab_full_blank_shell_340x900.png");
 }
 
 .devooo-dashboard-shell::before {
   background-image:
     linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
-    url("../assets/ui/devooo/dashboard/dashboard_tab_full_blank_shell_340x900.png");
+    url("/src/assets/ui/devooo/dashboard/dashboard_tab_full_blank_shell_340x900.png");
 }
 
 .devooo-performance-shell::before {
   background-image:
     linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
-    url("../assets/ui/devooo/performance/performance_tab_full_blank_shell_340x900.png");
+    url("/src/assets/ui/devooo/performance/performance_tab_full_blank_shell_340x900.png");
 }
 
 .devooo-show-shell::before {
   background-image:
     linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
-    url("../assets/ui/devooo/show/show_tab_full_blank_shell_340x900.png");
+    url("/src/assets/ui/devooo/show/show_tab_full_blank_shell_340x900.png");
 }
 
 .devooo-ops-shell::before {
   background-image:
     linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
-    url("../assets/ui/devooo/ops/ops_tab_full_blank_shell_340x900.png");
+    url("/src/assets/ui/devooo/ops/ops_tab_full_blank_shell_340x900.png");
 }
 
 .devooo-branding-shell::before {
   background-image:
     linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
-    url("../assets/ui/devooo/branding/branding_tab_full_blank_shell_340x900.png");
+    url("/src/assets/ui/devooo/branding/branding_tab_full_blank_shell_340x900.png");
 }
 
 .devooo-templates-shell::before {
   background-image:
     linear-gradient(rgba(7, 9, 15, 0.48), rgba(7, 9, 15, 0.7)),
-    url("../assets/ui/devooo/templates/templates_tab_full_blank_shell_340x900.png");
+    url("/src/assets/ui/devooo/templates/templates_tab_full_blank_shell_340x900.png");
 }
 
 .devooo-inspector-shell > *,
@@ -224,34 +224,34 @@
 
 .devooo-inspector-section-card {
   min-height: 170px;
-  background-image: url("../assets/ui/devooo/inspector/inspector_section_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/inspector/inspector_section_card_blank.png");
 }
 
 .devooo-inspector-stat-row {
   min-height: 42px;
-  background-image: url("../assets/ui/devooo/inspector/inspector_stat_row_blank.png");
+  background-image: url("/src/assets/ui/devooo/inspector/inspector_stat_row_blank.png");
 }
 
 .devooo-instrument-assignment-card {
   min-height: 170px;
-  background-image: url("../assets/ui/devooo/inspector/instrument_assignment_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/inspector/instrument_assignment_card_blank.png");
 }
 
 .devooo-warp-slicing-card {
   min-height: 160px;
-  background-image: url("../assets/ui/devooo/inspector/warp_slicing_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/inspector/warp_slicing_card_blank.png");
 }
 
 .devooo-empty-state-card {
   min-height: 120px;
-  background-image: url("../assets/ui/devooo/inspector/empty_state_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/inspector/empty_state_card_blank.png");
 }
 
 .devooo-input-field {
   min-height: 32px;
   border: 0;
   background-color: transparent;
-  background-image: url("../assets/ui/devooo/controls/input_field_blank.png");
+  background-image: url("/src/assets/ui/devooo/controls/input_field_blank.png");
   color: var(--deck-text);
 }
 
@@ -259,7 +259,7 @@
   min-height: 32px;
   border: 0;
   background-color: transparent;
-  background-image: url("../assets/ui/devooo/controls/dropdown_field_blank.png");
+  background-image: url("/src/assets/ui/devooo/controls/dropdown_field_blank.png");
   color: var(--deck-text);
 }
 
@@ -267,14 +267,14 @@
   min-height: 30px;
   border: 0;
   background-color: transparent;
-  background-image: url("../assets/ui/devooo/controls/small_button_blank.png");
+  background-image: url("/src/assets/ui/devooo/controls/small_button_blank.png");
 }
 
 .devooo-button-wide {
   min-height: 32px;
   border: 0;
   background-color: transparent;
-  background-image: url("../assets/ui/devooo/controls/wide_button_blank.png");
+  background-image: url("/src/assets/ui/devooo/controls/wide_button_blank.png");
 }
 
 .devooo-button-wide:disabled,
@@ -284,74 +284,74 @@
 
 .devooo-chip-active {
   min-height: 34px;
-  background-image: url("../assets/ui/devooo/controls/chip_active_blank.png");
+  background-image: url("/src/assets/ui/devooo/controls/chip_active_blank.png");
 }
 
 .devooo-chip-inactive {
   min-height: 34px;
-  background-image: url("../assets/ui/devooo/controls/chip_inactive_blank.png");
+  background-image: url("/src/assets/ui/devooo/controls/chip_inactive_blank.png");
 }
 
 .devooo-toggle-shell {
   width: 55px;
   min-height: 24px;
   appearance: none;
-  background-image: url("../assets/ui/devooo/controls/toggle_shell_blank.png");
+  background-image: url("/src/assets/ui/devooo/controls/toggle_shell_blank.png");
 }
 
 .devooo-toggle-shell-no-switch {
   width: 55px;
   min-height: 24px;
   appearance: none;
-  background-image: url("../assets/ui/devooo/controls/toggle_shell_blank_no_switch.png");
+  background-image: url("/src/assets/ui/devooo/controls/toggle_shell_blank_no_switch.png");
 }
 
 .devooo-toggle-shell:checked {
-  background-image: url("../assets/ui/devooo/controls/toggle_shell_blank.png");
+  background-image: url("/src/assets/ui/devooo/controls/toggle_shell_blank.png");
 }
 
 .devooo-toggle-shell:not(:checked) {
-  background-image: url("../assets/ui/devooo/controls/toggle_shell_blank_no_switch.png");
+  background-image: url("/src/assets/ui/devooo/controls/toggle_shell_blank_no_switch.png");
 }
 
 .devooo-slider-horizontal-slot-no-switch {
   min-height: 26px;
   appearance: none;
   background-color: transparent;
-  background-image: url("../assets/ui/devooo/controls/horizontal_slider_slot_blank_no_switch.png");
+  background-image: url("/src/assets/ui/devooo/controls/horizontal_slider_slot_blank_no_switch.png");
 }
 
 .devooo-slider-vertical-slot-no-switch {
   min-width: 42px;
-  background-image: url("../assets/ui/devooo/controls/vertical_slider_slot_blank_no_switch.png");
+  background-image: url("/src/assets/ui/devooo/controls/vertical_slider_slot_blank_no_switch.png");
 }
 
 .devooo-mixer-section-card {
   min-height: 112px;
-  background-image: url("../assets/ui/devooo/mixer/mixer_section_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/mixer/mixer_section_card_blank.png");
 }
 
 .devooo-mixer-master-card {
   min-height: 156px;
-  background-image: url("../assets/ui/devooo/mixer/master_section_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/mixer/master_section_card_blank.png");
 }
 
 .devooo-mixer-track-card {
   min-height: 214px;
-  background-image: url("../assets/ui/devooo/mixer/channel_strip_blank.png");
+  background-image: url("/src/assets/ui/devooo/mixer/channel_strip_blank.png");
 }
 
 .devooo-mixer-return-card {
   min-height: 110px;
-  background-image: url("../assets/ui/devooo/mixer/send_return_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/mixer/send_return_card_blank.png");
 }
 
 .devooo-channel-strip {
-  background-image: url("../assets/ui/devooo/mixer/channel_strip_blank.png");
+  background-image: url("/src/assets/ui/devooo/mixer/channel_strip_blank.png");
 }
 
 .devooo-channel-strip-compact {
-  background-image: url("../assets/ui/devooo/mixer/channel_strip_compact_blank.png");
+  background-image: url("/src/assets/ui/devooo/mixer/channel_strip_compact_blank.png");
 }
 
 .devooo-meter-bar-shell,
@@ -369,35 +369,35 @@
 }
 
 .devooo-meter-mono-shell {
-  background-image: url("../assets/ui/devooo/mixer/mono_meter_shell_blank_no_bars.png");
+  background-image: url("/src/assets/ui/devooo/mixer/mono_meter_shell_blank_no_bars.png");
 }
 
 .devooo-meter-stereo-shell {
-  background-image: url("../assets/ui/devooo/mixer/stereo_meter_shell_blank_no_bars.png");
+  background-image: url("/src/assets/ui/devooo/mixer/stereo_meter_shell_blank_no_bars.png");
 }
 
 .devooo-meter-master-shell {
-  background-image: url("../assets/ui/devooo/mixer/master_meter_shell_blank_no_bars.png");
+  background-image: url("/src/assets/ui/devooo/mixer/master_meter_shell_blank_no_bars.png");
 }
 
 .devooo-fader-horizontal-slot-no-switch {
   min-height: 28px;
   appearance: none;
   background-color: transparent;
-  background-image: url("../assets/ui/devooo/mixer/horizontal_fader_slot_blank_no_switch.png");
+  background-image: url("/src/assets/ui/devooo/mixer/horizontal_fader_slot_blank_no_switch.png");
 }
 
 .devooo-fader-vertical-slot-no-switch {
   min-width: 42px;
-  background-image: url("../assets/ui/devooo/mixer/vertical_fader_slot_blank_no_switch.png");
+  background-image: url("/src/assets/ui/devooo/mixer/vertical_fader_slot_blank_no_switch.png");
 }
 
 .devooo-knob-shell {
-  background-image: url("../assets/ui/devooo/mixer/rotary_knob_shell_blank.png");
+  background-image: url("/src/assets/ui/devooo/mixer/rotary_knob_shell_blank.png");
 }
 
 .devooo-knob-shell-small {
-  background-image: url("../assets/ui/devooo/mixer/small_rotary_knob_shell_blank.png");
+  background-image: url("/src/assets/ui/devooo/mixer/small_rotary_knob_shell_blank.png");
 }
 
 .devooo-mute-button,
@@ -410,40 +410,40 @@
 }
 
 .devooo-mute-button {
-  background-image: url("../assets/ui/devooo/mixer/mute_button_blank.png");
+  background-image: url("/src/assets/ui/devooo/mixer/mute_button_blank.png");
 }
 
 .devooo-solo-button {
-  background-image: url("../assets/ui/devooo/mixer/solo_button_blank.png");
+  background-image: url("/src/assets/ui/devooo/mixer/solo_button_blank.png");
 }
 
 .devooo-arm-button {
-  background-image: url("../assets/ui/devooo/mixer/arm_button_blank.png");
+  background-image: url("/src/assets/ui/devooo/mixer/arm_button_blank.png");
 }
 
 .devooo-channel-name-plate {
   min-height: 32px;
-  background-image: url("../assets/ui/devooo/mixer/channel_name_plate_blank.png");
+  background-image: url("/src/assets/ui/devooo/mixer/channel_name_plate_blank.png");
 }
 
 .devooo-send-amount-slot {
   min-height: 26px;
   appearance: none;
   background-color: transparent;
-  background-image: url("../assets/ui/devooo/mixer/send_amount_slot_blank.png");
+  background-image: url("/src/assets/ui/devooo/mixer/send_amount_slot_blank.png");
 }
 
 .devooo-routing-select {
   min-height: 32px;
   border: 0;
   background-color: transparent;
-  background-image: url("../assets/ui/devooo/mixer/routing_select_blank.png");
+  background-image: url("/src/assets/ui/devooo/mixer/routing_select_blank.png");
   color: var(--deck-text);
 }
 
 .devooo-limiter-toggle-shell {
   min-height: 28px;
-  background-image: url("../assets/ui/devooo/mixer/limiter_toggle_shell_blank_no_switch.png");
+  background-image: url("/src/assets/ui/devooo/mixer/limiter_toggle_shell_blank_no_switch.png");
 }
 
 .devooo-utility-tab-content {
@@ -454,7 +454,7 @@
   min-height: 32px;
   border: 0;
   background-color: transparent;
-  background-image: url("../assets/ui/devooo/controls/input_field_blank.png");
+  background-image: url("/src/assets/ui/devooo/controls/input_field_blank.png");
   background-position: center;
   background-repeat: no-repeat;
   background-size: 100% 100%;
@@ -466,7 +466,7 @@
   border: 0;
   appearance: none;
   background-color: transparent;
-  background-image: url("../assets/ui/devooo/controls/dropdown_field_blank.png");
+  background-image: url("/src/assets/ui/devooo/controls/dropdown_field_blank.png");
   background-position: center;
   background-repeat: no-repeat;
   background-size: 100% 100%;
@@ -483,21 +483,21 @@
   min-height: 24px;
   appearance: none;
   background-color: transparent;
-  background-image: url("../assets/ui/devooo/controls/toggle_shell_blank_no_switch.png");
+  background-image: url("/src/assets/ui/devooo/controls/toggle_shell_blank_no_switch.png");
   background-position: center;
   background-repeat: no-repeat;
   background-size: 100% 100%;
 }
 
 .devooo-utility-tab-content input[type="checkbox"]:checked {
-  background-image: url("../assets/ui/devooo/controls/toggle_shell_blank.png");
+  background-image: url("/src/assets/ui/devooo/controls/toggle_shell_blank.png");
 }
 
 .devooo-utility-tab-content input[type="range"] {
   min-height: 26px;
   appearance: none;
   background-color: transparent;
-  background-image: url("../assets/ui/devooo/controls/horizontal_slider_slot_blank_no_switch.png");
+  background-image: url("/src/assets/ui/devooo/controls/horizontal_slider_slot_blank_no_switch.png");
   background-position: center;
   background-repeat: no-repeat;
   background-size: 100% 100%;
@@ -523,7 +523,7 @@
   min-height: 30px;
   border: 0;
   background-color: transparent;
-  background-image: url("../assets/ui/devooo/controls/small_button_blank.png");
+  background-image: url("/src/assets/ui/devooo/controls/small_button_blank.png");
   background-position: center;
   background-repeat: no-repeat;
   background-size: 100% 100%;
@@ -544,69 +544,69 @@
 }
 
 .devooo-plugins-shell :is(div, section, article)[class*="border-deck-border"] {
-  background-image: url("../assets/ui/devooo/plugins/plugin_chain_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/plugins/plugin_chain_card_blank.png");
 }
 
 .devooo-automation-shell :is(div, section, article)[class*="border-deck-border"] {
-  background-image: url("../assets/ui/devooo/automation/automation_lane_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/automation/automation_lane_card_blank.png");
 }
 
 .devooo-automation-shell :is(div, section, article)[class*="h-36"] {
-  background-image: url("../assets/ui/devooo/automation/automation_curve_editor_blank.png");
+  background-image: url("/src/assets/ui/devooo/automation/automation_curve_editor_blank.png");
 }
 
 .devooo-render-shell :is(div, section, article)[class*="border-deck-border"] {
-  background-image: url("../assets/ui/devooo/render/render_settings_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/render/render_settings_card_blank.png");
 }
 
 .devooo-comping-shell :is(div, section, article)[class*="border-deck-border"] {
-  background-image: url("../assets/ui/devooo/comping/take_lane_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/comping/take_lane_card_blank.png");
 }
 
 .devooo-system-shell :is(div, section, article)[class*="border-deck-border"] {
-  background-image: url("../assets/ui/devooo/system/system_health_tile_blank.png");
+  background-image: url("/src/assets/ui/devooo/system/system_health_tile_blank.png");
 }
 
 .devooo-shortcuts-shell :is(div, section, article)[class*="border-deck-border"] {
-  background-image: url("../assets/ui/devooo/shortcuts/shortcut_group_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/shortcuts/shortcut_group_card_blank.png");
 }
 
 .devooo-assistant-shell :is(div, section, article)[class*="border-deck-border"] {
-  background-image: url("../assets/ui/devooo/assistant/assistant_message_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/assistant/assistant_message_card_blank.png");
 }
 
 .devooo-dashboard-shell :is(div, section, article)[class*="border-deck-border"] {
-  background-image: url("../assets/ui/devooo/dashboard/dashboard_widget_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/dashboard/dashboard_widget_card_blank.png");
 }
 
 .devooo-performance-shell :is(div, section, article)[class*="border-deck-border"] {
-  background-image: url("../assets/ui/devooo/performance/performance_macro_editor_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/performance/performance_macro_editor_card_blank.png");
 }
 
 .devooo-show-shell :is(div, section, article)[class*="border-deck-border"] {
-  background-image: url("../assets/ui/devooo/show/show_cue_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/show/show_cue_card_blank.png");
 }
 
 .devooo-ops-shell :is(div, section, article)[class*="border-deck-border"] {
-  background-image: url("../assets/ui/devooo/ops/release_readiness_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/ops/release_readiness_card_blank.png");
 }
 
 .devooo-branding-shell :is(div, section, article)[class*="border-deck-border"] {
-  background-image: url("../assets/ui/devooo/branding/brand_preview_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/branding/brand_preview_card_blank.png");
 }
 
 .devooo-templates-shell :is(div, section, article)[class*="border-deck-border"] {
-  background-image: url("../assets/ui/devooo/templates/template_card_blank.png");
+  background-image: url("/src/assets/ui/devooo/templates/template_card_blank.png");
 }
 
 .devooo-plugins-shell input[type="range"] {
-  background-image: url("../assets/ui/devooo/plugins/plugin_parameter_slider_slot_blank_no_switch.png");
+  background-image: url("/src/assets/ui/devooo/plugins/plugin_parameter_slider_slot_blank_no_switch.png");
 }
 
 .devooo-automation-shell input[type="checkbox"] {
-  background-image: url("../assets/ui/devooo/automation/automation_enable_toggle_shell_blank_no_switch.png");
+  background-image: url("/src/assets/ui/devooo/automation/automation_enable_toggle_shell_blank_no_switch.png");
 }
 
 .devooo-branding-shell input[type="checkbox"] {
-  background-image: url("../assets/ui/devooo/branding/glow_toggle_shell_blank_no_switch.png");
+  background-image: url("/src/assets/ui/devooo/branding/glow_toggle_shell_blank_no_switch.png");
 }

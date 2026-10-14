@@ -4,13 +4,26 @@ mod assistant;
 mod audio;
 mod commands;
 mod deck;
+mod lab_commands;
 mod models;
 mod plugin_host;
 mod project_io;
+mod project_merge;
 mod recovery;
 mod show_control;
+#[cfg(feature = "test-tools")]
+pub use audio::lab;
+#[cfg(feature = "test-tools")]
+pub use audio::PlaybackHandle;
+#[cfg(feature = "test-tools")]
+pub use lab_commands::audio_lab_devices;
+#[cfg(feature = "test-tools")]
+pub use models::Project;
+#[cfg(feature = "test-tools")]
+pub use project_merge::apply as apply_project_patch;
 
 use commands::AppState;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -26,13 +39,33 @@ pub fn run() {
             recording: std::sync::Mutex::new(None),
             meter_source: std::sync::Mutex::new(None),
         })
+        .on_window_event(|window, event| {
+            if matches!(event, tauri::WindowEvent::CloseRequested { .. }) {
+                let state = window.state::<AppState>();
+                state.playback.stop();
+                if let Ok(mut capture) = state.recording.lock() {
+                    if let Some(handle) = capture.take() {
+                        let _ = audio::recording::stop_recording(handle);
+                    }
+                }
+                if let Ok(project) = state.project.lock() {
+                    let _ = recovery::save_snapshot(&project, "window_close");
+                };
+            }
+        })
         .invoke_handler(tauri::generate_handler![
+            lab_commands::audio_lab_analyze,
+            lab_commands::audio_lab_process,
+            lab_commands::audio_lab_generate,
+            lab_commands::audio_lab_preview,
+            lab_commands::audio_lab_devices,
             // Phase 1
             commands::project_new,
             commands::project_save,
             commands::project_open,
             commands::project_get,
             commands::project_update,
+            commands::project_patch,
             commands::media_import_audio,
             commands::waveform_peaks,
             commands::track_add,
@@ -40,7 +73,11 @@ pub fn run() {
             commands::playback_play,
             commands::playback_play_arrangement,
             commands::playback_meters,
+            commands::audio_output_status,
+            commands::audio_output_configure,
+            commands::audio_output_reset_statistics,
             commands::playback_stop,
+            commands::playback_refresh,
             commands::playback_position_ms,
             commands::playback_is_playing,
             // Phase 2
@@ -116,9 +153,14 @@ pub fn run() {
             commands::crate_item_remove,
             commands::deck_load_track,
             commands::deck_set_playing,
+            commands::deck_set_headphone_cue,
+            commands::deck_dsp_update,
+            commands::deck_queue_cue,
+            commands::deck_performance_status,
             commands::deck_seek_position,
             commands::deck_turntable_nudge,
             commands::deck_turntable_scratch,
+            commands::deck_live_scratch,
             commands::deck_turntable_configure,
             commands::deck_hot_cue_set,
             commands::deck_hot_cue_trigger,
