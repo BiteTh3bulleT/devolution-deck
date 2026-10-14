@@ -510,16 +510,16 @@ pub struct ThemeTokenSet {
 impl Default for ThemeTokenSet {
     fn default() -> Self {
         Self {
-            bg_hex: "#07090f".to_string(),
-            surface_hex: "#101522".to_string(),
-            panel_hex: "#131a2a".to_string(),
-            border_hex: "#1f2a40".to_string(),
-            text_hex: "#e8edf8".to_string(),
-            text_muted_hex: "#95a3bf".to_string(),
-            accent_hex: "#ff6b1a".to_string(),
-            cyan_hex: "#38d7ff".to_string(),
-            magenta_hex: "#ff4fd8".to_string(),
-            amber_hex: "#ffc247".to_string(),
+            bg_hex: "#0b1015".to_string(),
+            surface_hex: "#141c23".to_string(),
+            panel_hex: "#1b252e".to_string(),
+            border_hex: "#34424c".to_string(),
+            text_hex: "#dce5ea".to_string(),
+            text_muted_hex: "#98aab5".to_string(),
+            accent_hex: "#e4a75f".to_string(),
+            cyan_hex: "#7ccbd0".to_string(),
+            magenta_hex: "#b69ecb".to_string(),
+            amber_hex: "#edbc77".to_string(),
         }
     }
 }

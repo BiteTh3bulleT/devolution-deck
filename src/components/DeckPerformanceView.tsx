@@ -106,7 +106,7 @@ export function DeckPerformanceView() {
   const bindingByTrack = new Map(project.crossfader.track_bindings.map((entry) => [entry.track_id, entry.side]));
 
   return (
-    <div className="flex-1 min-h-0 overflow-auto bg-[radial-gradient(circle_at_0%_0%,rgba(56,215,255,0.12),transparent_38%),radial-gradient(circle_at_100%_0%,rgba(255,107,26,0.12),transparent_42%)] p-4">
+    <div className="deck-decks flex-1 min-h-0 overflow-auto p-4">
       <div className="max-w-[1500px] mx-auto space-y-4">
         <section className="rounded border border-deck-border bg-deck-panel/85 p-3 space-y-2">
           <div className="flex items-center justify-between gap-2">

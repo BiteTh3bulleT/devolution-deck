@@ -33,6 +33,8 @@ async function dispatch(command, args) {
     case 'recovery_snapshot_save': { const metadata = { id: randomUUID(), path: path.join(work, `snapshot_${Date.now()}.decksnap`), created_unix_ms: Date.now(), reason: args.reason ?? 'manual' }; writeFileSync(metadata.path, JSON.stringify({ metadata, project })); project.recovery_snapshots.push(metadata); return metadata; }
     case 'track_add': { const track = { id: randomUUID(), name: args.name || 'Lab audio', index: project.tracks.length, track_type: args.trackType ?? 'audio', clips: [], midi_clips: [], volume_db: 0, pan: 0, muted: false, solo: false, plugin_chain: { instances: [] }, freeze_state: { is_frozen: false, original_clips: [], original_midi_clips: [] }, take_lanes: [], comp_regions: [], armed: false }; project.tracks.push(track); return track; }
     case 'clip_place': { const clip = { ...args.payload, id: randomUUID(), slice_markers: [] }; delete clip.track_index; project.tracks[args.payload.track_index].clips.push(clip); return clip; }
+    case 'waveform_peaks': { const data = await native('audio_lab_analyze', { path: args.path }); return { buckets: data.waveform.map(b => ({min:Math.min(b.left_min,b.right_min),max:Math.max(b.left_max,b.right_max)})) }; }
+    case 'playback_meters': return { master_peak:0, master_rms:0, tracks:project.tracks.map(t => ({track_id:t.id,peak:0,rms:0})) };
     case 'playback_refresh': case 'playback_stop': return null;
     case 'playback_is_playing': return false;
     case 'playback_position_ms': return 0;

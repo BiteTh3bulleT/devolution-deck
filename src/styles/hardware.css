@@ -1,0 +1,106 @@
+/* V3 console skin. Physical control sprites are rendered by Blender; panel grain by imagegen. */
+.deck-app { background: var(--deck-bg); color:var(--deck-text); }
+.deck-transport {
+  min-height:76px; height:auto; padding:12px 18px; gap:10px;
+  background-image:linear-gradient(180deg,rgba(27,31,36,.8),rgba(13,16,20,.9)),url('/src/assets/ui/v3/graphite-texture.png');
+  background-size:auto,640px; border-top:1px solid #454b53; border-bottom:1px solid #030508;
+  box-shadow:0 4px 14px #0008,inset 0 -1px #343a43; z-index:20; overflow-x:auto;
+}
+.deck-transport::before { display:none; }
+.deck-status { height:40px; background:#0b0e12; box-shadow:inset 0 -1px #242c33; }
+.deck-app button {
+  position:relative; min-height:28px; border-radius:6px; border-color:#38424a;
+  background-color:#1a2026; background-image:url('/src/assets/ui/v3/button-idle.png');
+  background-position:center; background-size:100% 100%; background-repeat:no-repeat;
+  box-shadow:0 2px 3px #0007; transition:filter .12s,box-shadow .12s;
+}
+.deck-app button:hover:not(:disabled) { filter:brightness(1.2); border-color:#718189; }
+.deck-app button:active:not(:disabled),.deck-app button[aria-pressed='true'] {
+  background-image:url('/src/assets/ui/v3/button-pressed.png'); box-shadow:inset 0 2px 4px #0009;
+}
+.deck-app button:disabled { cursor:not-allowed; filter:saturate(.25); opacity:.45; }
+.deck-app :is(button,input,select,textarea):focus-visible { outline:2px solid var(--deck-cyan); outline-offset:3px; }
+.deck-app :is(input:not([type=range]):not([type=checkbox]):not([type=color]),select,textarea) {
+  background:#0b1014; border:1px solid #353f48; border-radius:5px; box-shadow:inset 0 2px 3px #0006;
+  color:var(--deck-text); min-height:30px; font-variant-numeric:tabular-nums;
+}
+.deck-app select { color-scheme:dark; }
+.deck-app input[type=checkbox] { accent-color:var(--deck-accent); }
+.deck-app input[type=range] { appearance:none; height:22px; min-width:0; background:transparent; width:100%; cursor:ew-resize; }
+.deck-app input[type=range]::-webkit-slider-runnable-track { height:5px; border-radius:4px; border:1px solid #020405; background:linear-gradient(#020406,#151d22); box-shadow:0 1px #424a52; }
+.deck-app input[type=range]::-webkit-slider-thumb { appearance:none; margin-top:-12px; width:26px; height:28px; border:none; border-radius:0; background:url('/src/assets/ui/v3/fader-cap.png') center/contain no-repeat; }
+.deck-app input[type=range]::-moz-range-track { height:5px; background:#070b10; border:1px solid #353e44; }
+.deck-app input[type=range]::-moz-range-thumb { width:26px; height:28px; border:0; background:url('/src/assets/ui/v3/fader-cap.png') center/contain no-repeat; }
+.deck-sidebar,.deck-utility {
+  background-image:linear-gradient(90deg,rgba(16,20,24,.92),rgba(22,26,30,.86)),url('/src/assets/ui/v3/graphite-texture.png');
+  background-size:auto,640px; border-color:#36414a; box-shadow:inset 1px 0 #ffffff08;
+}
+.deck-sidebar h2,.deck-utility h3 { font-size:11px; font-weight:600; letter-spacing:.13em; text-transform:uppercase; }
+.deck-utility-header { padding:16px 12px 12px; border-bottom:1px solid #303b43; }
+.deck-utility-header > div { display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+.deck-utility-header select { width:100%; padding:6px 8px; font-size:12px; }
+.deck-utility-header span { font-size:10px; text-transform:uppercase; letter-spacing:.15em; color:var(--deck-text-muted); }
+.deck-module-title { display:flex; align-items:center; gap:8px; }
+.deck-module-title::before { content:''; width:6px; height:6px; background:var(--deck-amber); border-radius:50%; box-shadow:0 0 7px #ffb95780; }
+.deck-workspace { background:linear-gradient(180deg,#0f1419,#0b1015); }
+.deck-app [class*='devooo-'][class*='shell'] { position:relative; background:transparent; border-radius:7px; }
+.deck-app [class*='devooo-'][class*='card'] {
+  border:1px solid #35414b; border-radius:7px;
+  background-image:linear-gradient(135deg,rgba(29,35,41,.9),rgba(15,20,25,.95)),url('/src/assets/ui/v3/graphite-texture.png');
+  background-size:auto,640px; box-shadow:0 3px 10px #0003,inset 0 1px #ffffff06;
+}
+.deck-app [class*='devooo-'][class*='plate'],.devooo-inspector-stat-row { border-bottom:1px solid #ffffff06; padding-top:7px;padding-bottom:7px; }
+.deck-app [class*='devooo-'][class*='chip'] { border:1px solid #3d4851; border-radius:5px; min-height:26px; padding:4px 8px; }
+.devooo-meter-bar-shell { height:12px; border:1px solid #06090c; background:#080d10; border-radius:3px; padding:2px; box-shadow:0 1px #46525b; }
+.devooo-meter-bar-fill { height:100%; background:repeating-linear-gradient(90deg,transparent 0 6px,#0009 6px 8px),linear-gradient(90deg,#74c995,#c6cf7a 70%,#f3b960 90%,#df7266); }
+.hardware-knob { display:flex; align-items:center; flex-direction:column; gap:2px; min-width:80px; cursor:ns-resize; user-select:none; }
+.hardware-control-label { font-size:10px; text-transform:uppercase; letter-spacing:.1em; color:var(--deck-text-muted); }
+.hardware-knob-face { position:relative; display:block; width:86px; height:86px; }
+.hardware-knob-face img { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+.hardware-knob-cap { transform-origin:center; }
+.deck-app .hardware-knob-face input[type=range] { position:absolute; inset:0; width:100%; height:100%; opacity:0; touch-action:none; cursor:ns-resize; }
+.hardware-knob-face:has(input:focus-visible) { outline:2px solid var(--deck-cyan); outline-offset:2px; border-radius:50%; }
+.hardware-control-value { font-family:ui-monospace,monospace; font-size:11px; color:var(--deck-amber); font-variant-numeric:tabular-nums; }
+.hardware-control-value small { font-size:9px; margin-left:4px; color:var(--deck-text-muted); }
+.hardware-knob.is-disabled { opacity:.4; }
+.deck-app button.hardware-jog { width:clamp(116px,13vw,190px); height:clamp(116px,13vw,190px); min-height:0; border:0; background:transparent; box-shadow:none; border-radius:50%; touch-action:none; flex-shrink:0; }
+.hardware-jog img { width:100%; height:100%; pointer-events:none; }
+.hardware-jog-hub { position:absolute; inset:42% 35%; font-family:Orbitron,monospace; font-size:12px; color:#a9b5bd; pointer-events:none; }
+.deck-jog-stage { display:flex; align-items:center; justify-content:center; gap:12px; padding:12px 0; border-block:1px solid #ffffff08; }
+.deck-lcd { background:linear-gradient(#071313,#0b1b1a); color:#a3d2c9; border:1px solid #263e3d; box-shadow:inset 0 2px 6px #000b; border-radius:5px; padding:12px; font-variant-numeric:tabular-nums; }
+.deck-lcd strong { display:block; font:600 19px ui-monospace,monospace; }
+.deck-lcd small { font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:#81a4a0; }
+.deck-channel { border:1px solid #3a4650; border-top:2px solid var(--deck-cyan); border-radius:9px; background-image:linear-gradient(130deg,#1b232cee,#10161bee),url('/src/assets/ui/v3/graphite-texture.png'); background-size:auto,640px; box-shadow:0 8px 18px #0004; }
+.deck-transport button[title='Play'],.deck-transport button[title='Stop'] { width:42px;height:42px;background-image:url('/src/assets/ui/v3/button-amber.png');background-size:contain;background-color:transparent;box-shadow:none;color:var(--deck-amber);border:0; }
+.deck-app .deck-transport button { flex-shrink:0; }
+.deck-transport [title='Record audio (requires input device)'] { color:#ef8c80; }
+.deck-transport button[aria-current='page'],.deck-status button[aria-pressed='true'] { color:var(--deck-cyan); border-bottom:2px solid var(--deck-cyan); }
+.deck-track-header { background:linear-gradient(110deg,#222c34,#161d24); box-shadow:inset 0 1px #ffffff08; }
+.deck-lab { background:radial-gradient(ellipse at 85% 0,#263c3e33,transparent 50%),linear-gradient(#10171c,#0b1015); }
+.deck-lab-header { border-bottom:1px solid #33414a; padding:6px 0 24px; }
+.deck-lab-header h1 { font-family:Space Grotesk,sans-serif; font-size:32px; letter-spacing:-.04em; font-weight:600; }
+.deck-lab-header p:first-child { color:var(--deck-amber); font-size:10px; letter-spacing:.2em; }
+.deck-lab .lab-chart { border:1px solid #33434c; border-radius:7px; background:#081015; padding:16px; box-shadow:inset 0 2px 5px #0005; }
+.deck-lab .lab-measurements { background:#0b1318; border:1px solid #2c3b43; border-radius:7px; padding:16px; }
+.deck-lab .lab-measurements dd { color:var(--deck-amber); font-size:16px; }
+.deck-lab .lab-measurements dt { text-transform:uppercase; letter-spacing:.07em; font-size:9px; }
+.deck-lab .lab-processor { background-image:linear-gradient(135deg,#1a242ded,#10171eeb),url('/src/assets/ui/v3/graphite-texture.png'); border:1px solid #35464f; border-radius:8px; padding:20px; }
+.deck-lab .lab-process-knobs { display:grid; grid-template-columns:repeat(4,minmax(80px,1fr)); gap:12px; border-bottom:1px solid #34424a; padding-bottom:18px; }
+.deck-section-heading { display:flex; align-items:center; gap:12px; margin-bottom:16px; }
+.deck-section-heading span { font:10px ui-monospace,monospace;color:var(--deck-amber);border:1px solid #3e4443;border-radius:4px;padding:4px 6px; }
+.deck-section-heading h2 { margin:0; font-size:16px; font-weight:500; letter-spacing:-.02em; }
+.deck-app [role=alert] { border-left:3px solid #dd8274; background:#3b22254d; padding:10px 14px; }
+@media (max-width:1150px) { .deck-transport { padding-inline:10px;gap:6px; } .deck-lab .lab-process-knobs { gap:4px; } }
+@media (prefers-reduced-motion:reduce) { .deck-app * { transition:none!important;animation:none!important; } }
+
+.deck-decks,.deck-stage,.deck-session { background:linear-gradient(180deg,#152027,#0c1218); }
+.deck-decks > div > section,.deck-stage > div > div { border-radius:8px; box-shadow:inset 0 1px #ffffff06,0 3px 9px #0003; }
+.deck-sidebar input { min-width:0; }
+.deck-sidebar button { flex-shrink:0; }
+.deck-app button[class*='border-red-'] { border-color:#8c4a46; color:#eea59c; }
+.deck-app button[class*='bg-red-'] { background-image:linear-gradient(#9c373748,#441a1a30),url('/src/assets/ui/v3/button-idle.png'); color:#ffd6d0; }
+.deck-lab .lab-chart svg { background:#0a1319; }
+.deck-utility [class*='grid-cols-['],.deck-channel [class*='grid-cols-['] { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.deck-utility :is(input,select,textarea),.deck-channel :is(input,select,textarea) { min-width:0;max-width:100%; }
+.deck-utility .grid > *,.deck-channel .grid > * { min-width:0; }
+.deck-utility [class*='grid-cols-['] > button { white-space:normal;overflow-wrap:anywhere; }

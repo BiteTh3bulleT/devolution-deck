@@ -1,3 +1,4 @@
+import { JogDial } from "../hardware/HardwareControls";
 import { useMemo, useState } from "react";
 import type { DeckState, LibraryItem } from "../../types";
 
@@ -55,7 +56,7 @@ export function DeckChannelCard({
   }, [loadedItem?.key_analysis]);
 
   return (
-    <section className="rounded border border-deck-border bg-deck-panel/90 p-3 space-y-3">
+    <section className="deck-channel p-4 space-y-3">
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-[10px] uppercase tracking-widest text-deck-cyan">Deck {deck.id}</p>
@@ -77,6 +78,10 @@ export function DeckChannelCard({
         </button>
       </div>
 
+      <div className="deck-jog-stage">
+        <JogDial label={`Jog Deck ${deck.id}`} position={deck.position_secs} vinylMode={deck.vinyl_mode} disabled={!deck.loaded_track || busy} onScratch={delta => void onScratch(deck.id, delta)} onNudge={beats => void onNudge(deck.id, beats)} />
+        <div className="deck-lcd"><small>Deck {deck.id} / elapsed</small><strong>{Math.floor(deck.position_secs / 60).toString().padStart(2,"0")}:{(deck.position_secs % 60).toFixed(1).padStart(4,"0")}</strong><small>{deck.playing ? "Playing" : "Standby"} · {deck.loop_state?.enabled ? "Loop" : "Free"}</small></div>
+      </div>
       <div className="grid grid-cols-4 gap-2 text-[11px]">
         <div className="rounded border border-deck-border bg-deck-surface p-2">
           <div className="text-deck-text-muted">BPM</div>

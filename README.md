@@ -4,6 +4,10 @@ Desktop music production, DJ performance, and show-control workstation for DJ De
 
 DEVOLUTION//DECK is a Tauri 2 desktop app with a React/TypeScript frontend and a Rust backend. The current build has moved beyond the original Phase 1 DAW slice and now includes arrangement editing, MIDI tools, recording, rendering, deck performance workflows, show-control integrations, app recovery, diagnostics, and release-readiness operations.
 
+## Graphite console interface (0.3.0)
+
+The entire workspace now shares an industrial graphite/amber skin. Blender supplies knobs, jog dials, keys and faders; imagegen supplies the brushed panel texture. Mixer, plugin and lab knobs support vertical drag, Shift for fine control, arrow keys and double-click reset. The control rack keeps all 15 modules in a labelled selector. See [asset provenance, the imagegen prompt and Blender rebuild instructions](design/ASSETS.md).
+
 ## Current Capabilities
 
 - Native desktop shell through Tauri 2.

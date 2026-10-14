@@ -1,3 +1,4 @@
+import { HardwareKnob } from "./hardware/HardwareControls";
 import { useEffect, useRef, useState } from "react";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import * as api from "../api";
@@ -21,7 +22,7 @@ function Measurements({ title, data }: { title: string; data: AudioAnalysis }) {
     ["Clipped samples", data.clipped_samples.toLocaleString()], ["DC left / right", `${data.dc_left.toFixed(5)} / ${data.dc_right.toFixed(5)}`],
     ["Below −60 dBFS", `${data.silence_secs.toFixed(2)} s`],
   ];
-  return <section><h3 className="mb-3 text-sm font-semibold text-deck-cyan">{title}</h3><dl className="grid grid-cols-2 xl:grid-cols-4 gap-x-4 gap-y-3">{metrics.map(([label, value]) => <div key={label}><dt className="text-xs text-deck-text-muted">{label}</dt><dd className="mt-1 font-mono text-sm text-deck-text">{value}</dd></div>)}</dl></section>;
+  return <section className="lab-measurements"><h3 className="mb-3 text-sm font-semibold text-deck-cyan">{title}</h3><dl className="grid grid-cols-2 xl:grid-cols-4 gap-x-4 gap-y-3">{metrics.map(([label, value]) => <div key={label}><dt className="text-xs text-deck-text-muted">{label}</dt><dd className="mt-1 font-mono text-sm text-deck-text">{value}</dd></div>)}</dl></section>;
 }
 function Charts({ data, name, selection, onSelect }: { data: AudioAnalysis; name: string; selection: [number, number]; onSelect: (start: number, end: number) => void }) {
   const dragStart = useRef<number | null>(null);
@@ -39,7 +40,7 @@ function Charts({ data, name, selection, onSelect }: { data: AudioAnalysis; name
     return `${x.toFixed(2)},${y.toFixed(2)}`;
   }).join(" ");
   return <section className="space-y-4">
-    <div><h3 className="mb-2 text-sm font-semibold">Stereo waveform <span className="font-normal text-xs text-deck-text-muted">· drag to select time</span></h3>
+    <div className="lab-chart"><h3 className="mb-2 text-sm font-semibold">Stereo waveform <span className="font-normal text-xs text-deck-text-muted">· drag to select time</span></h3>
       <svg viewBox="0 0 1000 190" preserveAspectRatio="none" className="w-full h-44 bg-deck-surface rounded cursor-crosshair touch-none" role="img" aria-label={`Stereo waveform of ${name}, ${data.duration_secs.toFixed(2)} seconds`}
         onPointerDown={(e) => { dragStart.current = point(e); e.currentTarget.setPointerCapture(e.pointerId); }}
         onPointerUp={(e) => { if (dragStart.current !== null) { const a = dragStart.current, b = point(e); if (Math.abs(a - b) > 0.01) onSelect(Math.min(a, b), Math.max(a, b)); dragStart.current = null; } }}>
@@ -49,7 +50,7 @@ function Charts({ data, name, selection, onSelect }: { data: AudioAnalysis; name
         <text x="8" y="20" fill="var(--deck-text)" fontSize="14">L · amplitude ±1</text><text x="8" y="110" fill="var(--deck-text)" fontSize="14">R · amplitude ±1</text>
       </svg><div className="flex justify-between text-xs text-deck-text-muted mt-1"><span>0 s</span><span>Time (seconds)</span><span>{data.duration_secs.toFixed(2)} s</span></div>
     </div>
-    <div><h3 className="mb-2 text-sm font-semibold">Average spectrum <span className="font-normal text-xs text-deck-text-muted">· stereo channel power · Hann FFT</span></h3>
+    <div className="lab-chart"><h3 className="mb-2 text-sm font-semibold">Average spectrum <span className="font-normal text-xs text-deck-text-muted">· stereo channel power · Hann FFT</span></h3>
       <svg viewBox="0 0 1000 170" className="w-full h-40 bg-deck-surface rounded" role="img" aria-label="Average spectrum, frequency in hertz, level in dBFS">
         {[0, 50, 100, 150].map((y) => <g key={y}><line x1="0" x2="1000" y1={y} y2={y} stroke="var(--deck-border)" /><text x="4" y={Math.max(12, y - 3)} fill="var(--deck-text-muted)" fontSize="12">{-(y / 150 * 120)} dBFS</text></g>)}
         <polyline points={spectrum} fill="none" stroke="var(--deck-cyan)" strokeWidth="2" />
@@ -96,16 +97,22 @@ export function AudioLabView() {
       if (useRecordingStore.getState().error) throw Error(useRecordingStore.getState().error ?? "Recording failed");
     }
   };
-  return <main className="flex-1 min-w-0 overflow-auto bg-deck-bg text-deck-text p-5 lg:p-7">
+  return <main className="deck-lab flex-1 min-w-0 overflow-auto bg-deck-bg text-deck-text p-5 lg:p-7">
     <div className="max-w-7xl mx-auto space-y-6">
-      <header className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs tracking-widest uppercase text-deck-cyan">Native audio workspace</p><h1 className="font-display text-2xl mt-1">Audio Lab</h1><p className="text-sm text-deck-text-muted mt-2">Inspect a sound, shape it, compare the result, and bring it into your session.</p></div>
+      <header className="deck-lab-header flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs tracking-widest uppercase text-deck-cyan">Native audio workspace</p><h1 className="font-display text-2xl mt-1">Audio Lab</h1><p className="text-sm text-deck-text-muted mt-2">Inspect a sound, shape it, compare the result, and bring it into your session.</p></div>
         <button className={button} disabled={!!lab.busy} onClick={() => void task("Importing audio", async () => { const selected = await openDialog({ multiple: false, filters: [{ name: "Audio", extensions: ["wav", "mp3", "flac", "ogg", "m4a", "aac"] }] }); if (typeof selected === "string") { const imported = await api.mediaImportAudio(selected); await useProjectStore.getState().load(); await select(imported.id); } })}>Open audio file</button></header>
       {(lab.error || lab.message || lab.busy) && <div role={lab.error ? "alert" : "status"} className={`rounded border p-3 text-sm ${lab.error ? "border-red-500 text-red-300" : "border-deck-border text-deck-cyan"}`}>{lab.error ?? lab.busy ?? lab.message}</div>}
       <label className="block text-xs text-deck-text-muted">Project library<select aria-label="Project library" className={`${field} mt-1`} value={lab.assetId ?? ""} disabled={!!lab.busy} onChange={(e) => void task("Analyzing audio", () => select(e.target.value))}><option value="">Choose a sound to analyze</option>{project?.media.map((a) => <option key={a.id} value={a.id}>{a.name} · {a.duration_secs.toFixed(2)} s</option>)}</select></label>
       {asset && lab.analysis && <>
         <Measurements title="Source measurements" data={lab.analysis} />
         <Charts data={lab.analysis} name={asset.name} selection={[lab.settings.start_secs, lab.settings.end_secs ?? lab.analysis.duration_secs]} onSelect={(start, end) => lab.patchSettings({ start_secs: Number(start.toFixed(4)), end_secs: Number(end.toFixed(4)) })} />
-        <section className="border-y border-deck-border py-5 space-y-4"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Sample editor & processing</h2><button className={button} disabled={!!lab.busy} onClick={() => useAudioLabStore.setState({ settings: { ...DEFAULT_PROCESS } })}>Reset processing</button></div>
+        <section className="lab-processor space-y-4"><div className="flex items-center justify-between"><h2 className="text-lg font-semibold">Sample editor & processing</h2><button className={button} disabled={!!lab.busy} onClick={() => useAudioLabStore.setState({ settings: { ...DEFAULT_PROCESS } })}>Reset processing</button></div>
+          <div className="lab-process-knobs">
+            <HardwareKnob label="Drive / gain" value={lab.settings.gain_db} min={-60} max={24} step={0.1} unit="dB" resetValue={0} onChange={v => update("gain_db",v)} />
+            <HardwareKnob label="Compression ratio" value={lab.settings.compressor_ratio} min={1} max={20} step={0.1} unit=":1" resetValue={4} onChange={v => update("compressor_ratio",v)} />
+            <HardwareKnob label="Time stretch" value={lab.settings.stretch_ratio} min={0.5} max={2} step={0.01} unit="×" resetValue={1} onChange={v => update("stretch_ratio",v)} />
+            <HardwareKnob label="Generator level" value={lab.signal.level_dbfs} min={-60} max={0} step={0.1} unit="dBFS" resetValue={-18} onChange={v => lab.patchSignal({level_dbfs:v})} />
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
             <Numeric label="Start (s)" value={lab.settings.start_secs} min={0} max={lab.analysis.duration_secs} step={0.001} onChange={(v) => update("start_secs", v ?? 0)} />
             <Numeric label="End (s)" value={lab.settings.end_secs} min={0} max={lab.analysis.duration_secs} step={0.001} onChange={(v) => update("end_secs", v)} />
@@ -129,7 +136,7 @@ export function AudioLabView() {
       </>}
       {resultAsset && lab.resultAnalysis && <section className="space-y-4"><Measurements title="Exported result measurements" data={lab.resultAnalysis} /><p className="text-xs text-deck-text-muted break-all">{resultAsset.path}</p><div className="flex flex-wrap gap-2"><button className={button} disabled={!!lab.busy} onClick={() => void task("Analyzing result", () => select(resultAsset.id))}>Use result as source</button><button className={button} disabled={!!lab.busy} onClick={() => void task("Auditioning result", () => api.audioLabPreview(resultAsset.path, DEFAULT_PROCESS))}>Audition result</button></div></section>}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-7">
-        <section className="space-y-4"><h2 className="text-lg font-semibold">Signal generator</h2><div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+        <section className="lab-processor space-y-4"><div className="deck-section-heading"><span>02</span><h2>Signal generator</h2></div><div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <label className="text-xs text-deck-text-muted">Signal<select aria-label="Signal" className={`${field} mt-1`} value={lab.signal.kind} onChange={(e) => lab.patchSignal({ kind: e.target.value as SignalSettings['kind'] })}>{['sine', 'square', 'triangle', 'white', 'pink', 'sweep', 'impulse'].map((kind) => <option key={kind} value={kind}>{kind}</option>)}</select></label>
           <Numeric label="Signal duration (s)" value={lab.signal.duration_secs} min={0.01} max={300} step={0.1} onChange={(v) => lab.patchSignal({ duration_secs: v ?? 5 })} />
           <Numeric label="Frequency (Hz)" value={lab.signal.frequency_hz} min={1} max={lab.signal.sample_rate * 0.45} onChange={(v) => lab.patchSignal({ frequency_hz: v ?? 440 })} />
@@ -137,7 +144,7 @@ export function AudioLabView() {
           <Numeric label="Signal level (dBFS)" value={lab.signal.level_dbfs} min={-60} max={0} onChange={(v) => lab.patchSignal({ level_dbfs: v ?? -18 })} />
           <label className="text-xs text-deck-text-muted">Signal sample rate<select aria-label="Signal sample rate" value={lab.signal.sample_rate} onChange={(e) => lab.patchSignal({ sample_rate: Number(e.target.value) })} className={`${field} mt-1`}>{[44100, 48000, 96000].map((rate) => <option key={rate} value={rate}>{rate} Hz</option>)}</select></label>
         </div><button className={button} disabled={!!lab.busy} onClick={() => void task("Generating signal", async () => { const path = await saveDialog({ defaultPath: `${lab.signal.kind}_${lab.signal.frequency_hz}Hz.wav`, filters: [{ name: "WAV audio", extensions: ["wav"] }] }); if (!path) return; const result = await api.audioLabGenerate(path, lab.signal); await importResult(result.path, result.analysis); })}>Generate WAV & add to library</button></section>
-        <section className="space-y-4"><h2 className="text-lg font-semibold">Recording & devices</h2><div className="grid grid-cols-2 gap-3"><label className="text-xs text-deck-text-muted">Capture input<select aria-label="Capture input" value={lab.inputDevice ?? ""} onChange={(e) => useAudioLabStore.setState({ inputDevice: e.target.value || null })} className={`${field} mt-1`}><option value="">System default input</option>{lab.devices.filter((d) => d.direction === "input").map((d) => <option key={d.name} value={d.name}>{d.name}</option>)}</select></label>
+        <section className="lab-processor space-y-4"><div className="deck-section-heading"><span>03</span><h2>Recording & devices</h2></div><div className="grid grid-cols-2 gap-3"><label className="text-xs text-deck-text-muted">Capture input<select aria-label="Capture input" value={lab.inputDevice ?? ""} onChange={(e) => useAudioLabStore.setState({ inputDevice: e.target.value || null })} className={`${field} mt-1`}><option value="">System default input</option>{lab.devices.filter((d) => d.direction === "input").map((d) => <option key={d.name} value={d.name}>{d.name}</option>)}</select></label>
           <label className="text-xs text-deck-text-muted">Destination track<select aria-label="Destination track" className={`${field} mt-1`} value={trackId} onChange={(e) => setTrackId(e.target.value)}><option value="">First audio track / create one</option>{audioTracks.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label></div>
           <div className="flex flex-wrap gap-2"><button className={button} disabled={!!lab.busy || (recordingStatus === "stopping" || recordingStatus === "starting")} onClick={() => void task("Updating capture", record)}>{recordingStatus === "recording" || recordingStatus === "count_in" ? "Stop & analyze take" : "Record to track"}</button><button className={button} disabled={!!lab.busy} onClick={() => void task("Checking devices", async () => { const devices = await api.audioLabDevices(); useAudioLabStore.setState({ devices, message: `Found ${devices.length} audio input/output devices.` }); })}>Refresh device diagnostics</button></div>
           <p className="text-xs text-deck-text-muted">Capture: {recordingStatus.replace("_", " ")} · recordings stay in Documents / DEVOLUTION DECK / Recordings. A take appears on the armed track and can be analyzed here.</p>

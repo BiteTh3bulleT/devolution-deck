@@ -194,7 +194,7 @@ export function TransportBar() {
   }, [error, clearError]);
 
   return (
-    <header className="relative flex items-center gap-2 h-12 px-3 bg-deck-panel border-b border-deck-border shrink-0 overflow-hidden before:absolute before:inset-0 before:bg-[linear-gradient(90deg,rgba(255,107,26,0.12),transparent_35%,rgba(56,215,255,0.1))] before:pointer-events-none">
+    <header className="deck-transport relative flex items-center gap-2 px-3 border-b border-deck-border shrink-0">
       {/* Transport controls */}
       <div className="flex items-center gap-1.5 shrink-0">
         <button
@@ -202,7 +202,7 @@ export function TransportBar() {
           onClick={handlePlay}
           disabled={status === "playing"}
           className="w-9 h-9 rounded bg-deck-accent hover:bg-deck-accent-dim disabled:opacity-50 flex items-center justify-center text-deck-bg font-display font-semibold"
-          title="Play"
+          title="Play" aria-label="Play"
         >
           ▶
         </button>
@@ -210,7 +210,7 @@ export function TransportBar() {
           type="button"
           onClick={handleStop}
           className="w-9 h-9 rounded bg-deck-muted hover:bg-deck-graphite flex items-center justify-center text-deck-text"
-          title="Stop"
+          title="Stop" aria-label="Stop"
         >
           ■
         </button>

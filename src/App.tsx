@@ -171,7 +171,10 @@ export default function App() {
   useEffect(() => {
     const root = document.documentElement;
     if (!project) return;
-    const theme = project.branding.theme;
+    const savedTheme = project.branding.theme;
+    const theme = savedTheme.bg_hex === "#07090f" && savedTheme.surface_hex === "#101522"
+      ? { ...savedTheme, bg_hex:"#0b1015",surface_hex:"#141c23",panel_hex:"#1b252e",border_hex:"#34424c",text_hex:"#dce5ea",text_muted_hex:"#98aab5",accent_hex:"#e4a75f",cyan_hex:"#7ccbd0",magenta_hex:"#b69ecb",amber_hex:"#edbc77" }
+      : savedTheme;
     root.style.setProperty("--deck-bg", theme.bg_hex);
     root.style.setProperty("--deck-surface", theme.surface_hex);
     root.style.setProperty("--deck-panel", theme.panel_hex);
@@ -353,12 +356,12 @@ export default function App() {
   }
 
   return (
-    <div className="flex flex-col h-full bg-deck-bg text-deck-text font-sans">
+    <div className="deck-app flex flex-col h-full bg-deck-bg text-deck-text font-sans">
       <TransportBar />
       <AppStatusStrip />
       <div className="flex flex-1 min-h-0 relative">
         {mainView !== "lab" && <Sidebar />}
-        <div className="flex flex-1 flex-col min-w-0 relative">
+        <div className="deck-workspace flex flex-1 flex-col min-w-0 relative">
           {mainView === "arrangement" && <Timeline />}
           {mainView === "session" && <SessionLauncher />}
           {mainView === "decks" && <DeckPerformanceView />}

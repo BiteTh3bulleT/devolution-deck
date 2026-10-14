@@ -67,7 +67,7 @@ export function TrackLane({
       style={{ height: trackHeight }}
     >
       <div
-        className="shrink-0 flex items-center gap-1.5 px-2 bg-deck-panel border-r border-deck-border"
+        className="deck-track-header shrink-0 flex items-center gap-1.5 px-2 bg-deck-panel border-r border-deck-border"
         style={{ width: trackHeaderWidth }}
       >
         <span

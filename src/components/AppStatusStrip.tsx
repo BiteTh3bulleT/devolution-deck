@@ -29,6 +29,7 @@ function modeMainView(mode: AppMode): "arrangement" | "session" | "decks" | "per
 export function AppStatusStrip() {
   const project = useProjectStore((state) => state.project);
   const load = useProjectStore((state) => state.load);
+  const mainView = useViewStore((state) => state.mainView);
   const setMainView = useViewStore((state) => state.setMainView);
   const setUtilityTab = useViewStore((state) => state.setUtilityTab);
 
@@ -48,7 +49,7 @@ export function AppStatusStrip() {
   }
 
   return (
-    <div className="h-8 border-b border-deck-border bg-deck-surface px-3 flex items-center gap-2 text-[11px]">
+    <div className="deck-status shrink-0 border-b border-deck-border bg-deck-surface px-3 flex items-center gap-2 text-[11px]">
       <span className="text-deck-text-muted">{header}</span>
       <div className="w-px h-4 bg-deck-border" />
 
@@ -56,6 +57,7 @@ export function AppStatusStrip() {
         {(Object.keys(MODE_LABELS) as AppMode[]).map((mode) => (
           <button
             key={mode}
+            aria-pressed={activeMode === mode}
             type="button"
             disabled={busy}
             onClick={async () => {
@@ -88,12 +90,12 @@ export function AppStatusStrip() {
       </div>
 
       <div className="ml-auto flex items-center gap-1">
-        <button type="button" className="shrink-0 px-3 py-0.5 rounded border border-deck-cyan text-deck-cyan" onClick={() => {
+        <button type="button" aria-pressed={mainView === "lab"} className="shrink-0 px-3 py-0.5 rounded border border-deck-cyan text-deck-cyan" onClick={() => {
           setMainView("lab");
           void api.navigationUpdate({ ...project.navigation, main_view: "lab" }).then((navigation) => {
             const current = useProjectStore.getState().project;
-            if (current) useProjectStore.getState().setProject({ ...current, navigation });
-          });
+            if (current?.id === project.id) useProjectStore.getState().setProject({ ...current, navigation });
+          }).catch(error => useProjectStore.setState({error: String(error)}));
         }}>Audio Lab</button>
         {indicators.slice(0, 4).map((indicator) => (
           <span
