@@ -161,7 +161,7 @@ export function TransportBar() {
     if (!tauriRuntime) return;
     if (!project) return;
     await play(positionSecs);
-    if (metronomeEnabled) {
+    if (metronomeEnabled && useTransportStore.getState().status === "playing") {
       metronomeService.setEnabled(true);
       metronomeService.start(positionSecs, project?.bpm ?? 120);
     }

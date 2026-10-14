@@ -7,6 +7,55 @@ use libloading::Library;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
+fn trusted_catalog_path() -> PathBuf {
+    std::env::var_os("LOCALAPPDATA")
+        .or_else(|| std::env::var_os("XDG_DATA_HOME"))
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            std::env::var_os("HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(std::env::temp_dir)
+                .join(".local/share")
+        })
+        .join("devolution-deck")
+        .join("trusted-plugins.json")
+}
+pub fn trusted_descriptors() -> Vec<PluginDescriptor> {
+    let mut descriptors = builtin_descriptors();
+    if let Ok(data) = std::fs::read(trusted_catalog_path()) {
+        if let Ok(approved) = serde_json::from_slice::<Vec<PluginDescriptor>>(&data) {
+            descriptors.extend(approved.into_iter().filter(|d| d.format == "vst3"));
+        }
+    }
+    descriptors
+}
+pub fn approve_descriptors(descriptors: &[PluginDescriptor]) -> Result<(), String> {
+    let path = trusted_catalog_path();
+    std::fs::create_dir_all(path.parent().ok_or("Invalid plugin catalog path")?)
+        .map_err(|e| e.to_string())?;
+    std::fs::write(
+        path,
+        serde_json::to_vec(descriptors).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
+}
+pub fn reconcile_project(project: &mut crate::models::Project) {
+    // Persisted project paths never authorize native code. Only an intentional
+    // local scan populates the trusted catalog; IDs resolve to those local paths.
+    project.plugin_registry = trusted_descriptors();
+    for track in &mut project.tracks {
+        for instance in &mut track.plugin_chain.instances {
+            if !project
+                .plugin_registry
+                .iter()
+                .any(|d| d.id == instance.descriptor_id)
+            {
+                instance.enabled = false;
+            }
+        }
+    }
+}
+
 pub fn builtin_descriptors() -> Vec<PluginDescriptor> {
     vec![
         PluginDescriptor {

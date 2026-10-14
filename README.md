@@ -7,6 +7,7 @@ DEVOLUTION//DECK is a Tauri 2 desktop app with a React/TypeScript frontend and a
 ## Current Capabilities
 
 - Native desktop shell through Tauri 2.
+- Integrated Audio Lab: stereo waveform and spectrum analysis, peak/RMS/LUFS estimates, selection editing, DSP, pitch-preserving stretch, signal generation, recording and device diagnostics.
 - Dark command-center UI with transport, sidebar, arrangement timeline, utility panels, deck/show modes, and status surfaces.
 - Project lifecycle for `.deck` JSON files with schema migration, compatibility checks, backups, recovery snapshots, and support bundle export.
 - Audio import, waveform peak generation, clip placement, realtime arrangement playback, loop regions, recording, render-in-place, freeze, mixdown export, and stem export.
@@ -15,6 +16,8 @@ DEVOLUTION//DECK is a Tauri 2 desktop app with a React/TypeScript frontend and a
 - DJ deck mode with real Deck A/B audio playback, cues, loops, crossfader, sampler pads, library crates, setlists, and live coordination panels.
 - Show-control foundation for OSC, MIDI, DMX/Art-Net, lighting cue bindings, scene triggers, visual sync, and performance macro workflows.
 - Assistant and ops panels for asset classification, release checks, error reports, diagnostics, onboarding, branding, shortcuts, and system health.
+
+See [the Audio Lab guide](docs/AUDIO_LAB.md) and [repair notes](docs/REPAIR_NOTES.md).
 
 ## Architecture
 
@@ -45,15 +48,15 @@ Rust remains the source of truth for persisted project state. The frontend mirro
 
 ## Prerequisites
 
-- Node.js 18 or newer.
-- Rust stable.
+- Node.js 20.19+ or 22.12+ (24 LTS recommended).
+- Rust stable, CMake, and a C++ compiler. On Windows install Visual Studio 2022 Build Tools with Desktop development with C++.
 - Platform requirements for Tauri 2. On Linux this includes WebKit/GTK packages listed in the Tauri prerequisites.
 - Audio/MIDI devices are optional for development, but hardware-specific flows need matching local devices.
 
 ## Install
 
 ```bash
-npm install
+npm ci
 ```
 
 ## Development
@@ -89,8 +92,9 @@ npm run lint
 Rust checks:
 
 ```bash
-cargo check --manifest-path src-tauri/Cargo.toml
-cargo test --manifest-path src-tauri/Cargo.toml
+npm run check:native
+npm run test:native
+npm test
 ```
 
 Tauri production bundle:
@@ -145,12 +149,14 @@ Future tab packs should use the same folder pattern. Preview sheets and asset-pa
 
 ## Known Limitations
 
-- Deck playback currently renders finite buffers when deck state changes; long-running continuous deck streaming, independent pitch lock, and deck-specific meters are still evolving.
+- Decks use a persistent output stream and independent source clocks. Speed changes also change pitch; independent deck pitch lock and deck-specific meters remain future work.
 - Plugin hosting is a foundation layer, not a production-grade VST/CLAP sandbox.
-- MIDI and metronome playback use Web Audio for audible feedback and are not a low-latency professional MIDI/audio engine yet.
+- Arrangement audio and MIDI synthesis share native rendering. The metronome uses Web Audio. Arrangement edits prepare replacement buffers asynchronously; this is not a professional hard real-time plugin engine.
 - Show-control integrations can dispatch OSC, MIDI, and Art-Net packets, but real venue/hardware validation is still required.
 - Media portability depends on stored paths; robust relink/package workflows are still evolving.
 - Automated Rust tests now cover engine mixdown, mixer policy, meters, stereo rendering, automation, plugin preflight, MIDI synthesis, and deck mix behavior.
+
+The vendored `rack` adapter contains narrowly scoped build fixes for MSVC. Its MIT/Apache notices are preserved; the VST3 SDK is fetched at a pinned revision unless `VST3_SDK_PATH` points to an existing SDK.
 
 ## License
 

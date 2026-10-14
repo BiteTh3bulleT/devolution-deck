@@ -4,7 +4,10 @@ use crate::models::midi::{MidiClip, MidiNote};
 use serde::{Deserialize, Serialize};
 
 /// Project file schema version. Bump when persistence format changes.
-pub const PROJECT_SCHEMA_VERSION: u32 = 8;
+pub const PROJECT_SCHEMA_VERSION: u32 = 9;
+fn default_project_id() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
 
 fn default_track_volume_db() -> f64 {
     0.0
@@ -64,7 +67,7 @@ impl Default for WarpState {
             enabled: false,
             source_bpm: None,
             target_bpm: None,
-            algorithm: "elastique_pro".to_string(),
+            algorithm: "wsola".to_string(),
             preserve_formants: true,
         }
     }
@@ -1785,6 +1788,8 @@ impl Default for SystemHealthSnapshot {
 /// Root project container. Persisted to disk as JSON.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Project {
+    #[serde(default = "default_project_id")]
+    pub id: String,
     pub version: u32,
     pub title: String,
     pub bpm: f64,
@@ -1951,6 +1956,7 @@ impl Default for Project {
     fn default() -> Self {
         Self {
             version: PROJECT_SCHEMA_VERSION,
+            id: default_project_id(),
             title: "Untitled".to_string(),
             bpm: 120.0,
             sample_rate: 44100,

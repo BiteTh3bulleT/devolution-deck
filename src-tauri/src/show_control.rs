@@ -266,11 +266,16 @@ pub fn flush_dmx_universes(
 
     let mut out = Vec::new();
     for universe_state in universes {
+        let blackout_channels = vec![0u8; universe_state.channels.len()];
         let sent = send_artnet(
             bridge.host.as_str(),
             bridge.port,
             universe_state.universe,
-            universe_state.channels.as_slice(),
+            if universe_state.blackout {
+                blackout_channels.as_slice()
+            } else {
+                universe_state.channels.as_slice()
+            },
         )?;
         out.push(format!(
             "Art-Net flush sent {} bytes universe={} host={}:{}",
@@ -302,6 +307,9 @@ pub fn execute_lighting_cue(
         return Err("Lighting cue is disabled".to_string());
     }
     let state = ensure_universe_mut(universes, cue.universe);
+    if state.blackout {
+        return Err("Blackout is active; reset safety before firing cues".into());
+    }
     if state.channels.len() < 512 {
         state.channels.resize(512, 0);
     }
@@ -311,7 +319,6 @@ pub fn execute_lighting_cue(
         }
         state.channels[(assignment.channel - 1) as usize] = assignment.value;
     }
-    state.blackout = false;
     state.last_update_unix_ms = Some(now_unix_ms);
 
     if !bridge.enabled {
@@ -335,4 +342,19 @@ pub fn execute_lighting_cue(
         "Art-Net sent {} bytes for cue={} universe={} host={}:{}",
         sent, cue.name, cue.universe, bridge.host, bridge.port
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn blackout_rejects_cue_and_keeps_output_zero() {
+        let mut universes = vec![DmxUniverseState::new(0)];
+        apply_blackout(&mut universes, true, 1);
+        let cue:LightingCue=serde_json::from_value(serde_json::json!({"id":"cue","name":"cue","universe":0,"values":[{"channel":1,"value":255}],"fade_ms":0,"hold_ms":1,"enabled":true})).unwrap();
+        let bridge = DmxBridgeConfig::default();
+        assert!(execute_lighting_cue(&bridge, &mut universes, &cue, 2).is_err());
+        assert!(universes[0].blackout);
+        assert_eq!(universes[0].channels[0], 0);
+    }
 }

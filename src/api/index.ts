@@ -4,6 +4,7 @@
  */
 
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import type { AudioAnalysis, ProcessSettings, SignalSettings, LabResult, LabDevice } from "../types/audioLab";
 import type {
   Project,
   MediaAsset,
@@ -84,6 +85,9 @@ type RuntimeWindow = Window & {
 };
 
 let warnedMissingTauri = false;
+let lastProject: Project | null = null;
+let mutationQueue: Promise<unknown> = Promise.resolve();
+let projectGeneration = 0;
 
 export function isTauriRuntime(): boolean {
   if (typeof window === "undefined") {
@@ -100,15 +104,30 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
     }
     throw new Error(TAURI_MISSING_MESSAGE);
   }
-  return tauriInvoke<T>(command, args);
+  const result = await tauriInvoke<T>(command, args);
+  if (/^(project_patch|project_update|track_|midi_clip_|clip_place|sidechain_|loop_region_|comp_region_|take_lane_|performance_macro_trigger|recording_stop_to_timeline)/.test(command)) {
+    void tauriInvoke("playback_refresh").catch((error) => {
+      window.dispatchEvent(new CustomEvent("deck-audio-error", { detail: String(error) }));
+    });
+  }
+  return result;
 }
 
 export async function projectNew(): Promise<Project> {
-  return invoke<Project>("project_new");
+  projectGeneration++;
+  lastProject = await invoke<Project>("project_new");
+  return lastProject;
 }
 
+export const audioLabAnalyze = (path: string) => invoke<AudioAnalysis>("audio_lab_analyze", { path });
+export const audioLabProcess = (inputPath: string, outputPath: string, settings: ProcessSettings) => invoke<LabResult>("audio_lab_process", { inputPath, outputPath, settings });
+export const audioLabGenerate = (outputPath: string, settings: SignalSettings) => invoke<LabResult>("audio_lab_generate", { outputPath, settings });
+export const audioLabPreview = (path: string, settings: ProcessSettings) => invoke<void>("audio_lab_preview", { path, settings });
+export const audioLabDevices = () => invoke<LabDevice[]>("audio_lab_devices");
+
 export async function projectGet(): Promise<Project> {
-  return invoke<Project>("project_get");
+  lastProject = await invoke<Project>("project_get");
+  return lastProject;
 }
 
 export async function projectSave(path: string): Promise<void> {
@@ -116,11 +135,21 @@ export async function projectSave(path: string): Promise<void> {
 }
 
 export async function projectOpen(path: string): Promise<Project> {
-  return invoke<Project>("project_open", { path });
+  projectGeneration++;
+  lastProject = await invoke<Project>("project_open", { path });
+  return lastProject;
 }
 
-export async function projectUpdate(project: Project): Promise<Project> {
-  return invoke<Project>("project_update", { project });
+export async function projectUpdate(project: Project, baseline: Project): Promise<Project> {
+  const generation = projectGeneration;
+  const task = mutationQueue.catch(() => undefined).then(async () => {
+    if (generation !== projectGeneration) throw new Error("Project changed while this edit was pending; reload and retry.");
+    const result = await invoke<Project>("project_patch", { baseline, project });
+    lastProject = result;
+    return result;
+  });
+  mutationQueue = task;
+  return task;
 }
 
 export async function mediaImportAudio(path: string): Promise<MediaAsset> {
@@ -423,7 +452,9 @@ export async function recoverySnapshotList(): Promise<RecoverySnapshot[]> {
 }
 
 export async function recoverySnapshotRestore(snapshotPath: string): Promise<Project> {
-  return invoke<Project>("recovery_snapshot_restore", { snapshotPath });
+  projectGeneration++;
+  lastProject = await invoke<Project>("recovery_snapshot_restore", { snapshotPath });
+  return lastProject;
 }
 
 export async function monitoringUpdate(monitoring: MonitoringState): Promise<MonitoringState> {

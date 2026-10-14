@@ -250,6 +250,7 @@ export function SystemPanel() {
                     setError(null);
                     try {
                       await api.recoverySnapshotRestore(snapshot.path);
+                      useProjectStore.getState().setProjectPath(null);
                       await load();
                     } catch (e) {
                       setError(String(e));

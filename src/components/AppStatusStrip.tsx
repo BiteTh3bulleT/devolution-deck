@@ -88,6 +88,13 @@ export function AppStatusStrip() {
       </div>
 
       <div className="ml-auto flex items-center gap-1">
+        <button type="button" className="shrink-0 px-3 py-0.5 rounded border border-deck-cyan text-deck-cyan" onClick={() => {
+          setMainView("lab");
+          void api.navigationUpdate({ ...project.navigation, main_view: "lab" }).then((navigation) => {
+            const current = useProjectStore.getState().project;
+            if (current) useProjectStore.getState().setProject({ ...current, navigation });
+          });
+        }}>Audio Lab</button>
         {indicators.slice(0, 4).map((indicator) => (
           <span
             key={indicator.id}

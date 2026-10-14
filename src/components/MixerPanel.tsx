@@ -113,7 +113,7 @@ export function MixerPanel() {
               const next = { ...project, master_gain_db: Number(event.target.value) };
               setProject(next);
               try {
-                await api.projectUpdate(next);
+                await api.projectUpdate(next, project);
               } catch {
                 // keep optimistic value; next project sync corrects drift
               }

@@ -6,8 +6,9 @@ import { create } from "zustand";
 import type { RecordingStatus } from "../types";
 import * as api from "../api";
 import { useProjectStore } from "./projectStore";
+import { useTransportStore } from "./transportStore";
 import { useMetronomeStore } from "./metronomeStore";
-import { join, tempDir } from "@tauri-apps/api/path";
+import { join, documentDir } from "@tauri-apps/api/path";
 
 interface RecordingState {
   status: RecordingStatus;
@@ -27,6 +28,8 @@ interface RecordingState {
   clearError(): void;
 }
 
+let generation = 0;
+let captureStart: Promise<void> | null = null;
 let countInTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const useRecordingStore = create<RecordingState>((set, get) => ({
@@ -53,6 +56,8 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
   },
 
   async startRecording(trackId, positionSecs) {
+    if (get().status !== "idle") return;
+    const request = ++generation;
     const { countInBars } = useMetronomeStore.getState();
     const project = useProjectStore.getState().project;
     if (!project) return;
@@ -74,12 +79,21 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
     });
 
     const doStart = async () => {
-      const tmpPath = await join(await tempDir(), `devoDeck_rec_${Date.now()}.wav`);
-      set({ status: "recording", _tmpPath: tmpPath });
+      countInTimer = null;
       try {
-        await api.recordingStart(get().selectedDevice, tmpPath, targetBufferMs);
+        const tmpPath = await join(await documentDir(), "DEVOLUTION DECK", "Recordings", `take_${Date.now()}.wav`);
+        if (request !== generation) return;
+        if (useProjectStore.getState().project?.id !== project.id) { set({ status: "idle", targetTrackId: null }); return; }
+        const transport = useTransportStore.getState();
+        if (transport.status === "playing") set({ recordStartSecs: transport.positionSecs });
+        set({ status: "starting", _tmpPath: tmpPath });
+        captureStart = api.recordingStart(get().selectedDevice, tmpPath, targetBufferMs);
+        await captureStart;
+        if (request === generation) set({ status: "recording" });
       } catch (e) {
-        set({ status: "idle", error: `Recording failed: ${e}`, _tmpPath: null });
+        if (request === generation) set({ status: "idle", error: `Recording failed: ${e}`, _tmpPath: null });
+      } finally {
+        captureStart = null;
       }
     };
 
@@ -87,22 +101,25 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
       set({ status: "count_in" });
       countInTimer = setTimeout(doStart, countInSecs * 1000);
     } else {
+      set({ status: "count_in" });
       await doStart();
     }
   },
 
   async stopRecording() {
-    if (countInTimer) {
-      clearTimeout(countInTimer);
+    ++generation;
+    if (get().status === "count_in") {
+      if (countInTimer) clearTimeout(countInTimer);
       countInTimer = null;
       // Cancelled during count-in — no temp file to clean up
       set({ status: "idle", targetTrackId: null, _tmpPath: null });
       return;
     }
     const { status, recordStartSecs, latencyCompensationSecs } = get();
-    if (status !== "recording" && status !== "count_in") return;
+    if (status !== "recording" && status !== "starting") return;
     set({ status: "stopping" });
     try {
+      if (captureStart) await captureStart;
       // Backend stops capture and atomically places the recording on the
       // armed audio track as media asset + timeline clip.
       await api.recordingStopToTimeline(
@@ -110,14 +127,6 @@ export const useRecordingStore = create<RecordingState>((set, get) => ({
       );
       await useProjectStore.getState().load();
     } catch (e) {
-      // Attempt to clean up temp file on error
-      const tmpPath = get()._tmpPath;
-      if (tmpPath) {
-        try {
-          const { remove } = await import("@tauri-apps/plugin-fs");
-          await remove(tmpPath);
-        } catch { /* best effort */ }
-      }
       set({ error: `Stop recording failed: ${e}` });
     }
     set({ status: "idle", targetTrackId: null, latencyCompensationSecs: 0, _tmpPath: null });

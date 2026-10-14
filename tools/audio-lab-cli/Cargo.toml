@@ -1,0 +1,16 @@
+[package]
+name = "audio-lab-cli"
+version = "0.2.0"
+edition = "2021"
+
+[[bin]]
+name = "audio-lab-cli"
+path = "src/main.rs"
+
+[dependencies]
+devolution-deck = { path = "../../src-tauri", features = ["test-tools"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+
+[patch.crates-io]
+rack = { path = "../../vendor/rack" }

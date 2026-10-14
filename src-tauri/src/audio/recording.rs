@@ -16,20 +16,21 @@ use std::sync::{Arc, Mutex};
 pub struct RecordingHandle {
     /// Set to true to signal the recording thread to stop.
     pub stop_flag: Arc<AtomicBool>,
-    /// Shared sample buffer (also read by stop_recording to flush to WAV).
-    pub samples: Arc<Mutex<Vec<f32>>>,
-    /// WAV spec used when flushing.
-    pub spec: hound::WavSpec,
     /// Destination path.
     pub output_path: PathBuf,
     /// Background thread that owns the cpal Stream.
     pub thread: Option<std::thread::JoinHandle<()>>,
+    pub error: Arc<Mutex<Option<String>>>,
 }
 
 // Safety: all fields except `thread` are already Send.
 // JoinHandle is Send. We never share the cpal Stream across threads —
 // it lives inside the spawned thread and is dropped there.
-unsafe impl Send for RecordingHandle {}
+impl Drop for RecordingHandle {
+    fn drop(&mut self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+    }
+}
 
 /// Enumerate available audio input device names.
 pub fn list_input_devices() -> Result<Vec<String>, String> {
@@ -41,7 +42,7 @@ pub fn list_input_devices() -> Result<Vec<String>, String> {
     Ok(names)
 }
 
-/// Open an input stream on a background thread and start buffering samples.
+/// Stream capture through a bounded queue to disk, flushing the WAV header regularly.
 /// `device_name = None` uses the default input device.
 pub fn start_recording(
     device_name: Option<&str>,
@@ -67,10 +68,20 @@ pub fn start_recording(
 
     let sample_rate = supported_config.sample_rate().0;
     let channels = supported_config.channels();
+    let sample_format = supported_config.sample_format();
     let mut stream_config: cpal::StreamConfig = supported_config.into();
     if let Some(buffer_ms) = target_buffer_ms {
         let frames = ((sample_rate as u64 * buffer_ms as u64) / 1000).max(32) as u32;
-        stream_config.buffer_size = cpal::BufferSize::Fixed(frames);
+        stream_config.buffer_size = match device
+            .default_input_config()
+            .map_err(|e| e.to_string())?
+            .buffer_size()
+        {
+            cpal::SupportedBufferSize::Range { min, max } => {
+                cpal::BufferSize::Fixed(frames.clamp(*min, *max))
+            }
+            cpal::SupportedBufferSize::Unknown => cpal::BufferSize::Default,
+        };
     }
 
     let spec = hound::WavSpec {
@@ -80,55 +91,176 @@ pub fn start_recording(
         sample_format: hound::SampleFormat::Float,
     };
 
-    let samples: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
-    let samples_cb = Arc::clone(&samples);
     let stop_flag = Arc::new(AtomicBool::new(false));
     let stop_flag_thread = Arc::clone(&stop_flag);
-    let output_path_buf = output_path.to_path_buf();
+    let error = Arc::new(Mutex::new(None));
+    let error_thread = error.clone();
+    let (ready_tx, ready_rx) = std::sync::mpsc::sync_channel(1);
+    let (samples_tx, samples_rx) = std::sync::mpsc::sync_channel::<Vec<f32>>(32);
+    let capture_path = output_path.to_path_buf();
 
     // Spawn a thread that owns the cpal Stream (which is !Send).
     let thread = std::thread::spawn(move || {
-        let stream = device.build_input_stream(
-            &stream_config,
-            move |data: &[f32], _: &cpal::InputCallbackInfo| {
-                if let Ok(mut buf) = samples_cb.lock() {
-                    buf.extend_from_slice(data);
-                }
-            },
-            |err| eprintln!("[recording] stream error: {err}"),
-            None,
-        );
+        let mut writer = match hound::WavWriter::create(&capture_path, spec) {
+            Ok(writer) => writer,
+            Err(e) => {
+                let _ = ready_tx.send(Err(format!("Cannot create capture WAV: {e}")));
+                return;
+            }
+        };
+        let stream = match sample_format {
+            cpal::SampleFormat::F32 => {
+                build_stream::<f32>(&device, &stream_config, samples_tx, error_thread.clone())
+            }
+            cpal::SampleFormat::F64 => {
+                build_stream::<f64>(&device, &stream_config, samples_tx, error_thread.clone())
+            }
+            cpal::SampleFormat::I8 => {
+                build_stream::<i8>(&device, &stream_config, samples_tx, error_thread.clone())
+            }
+            cpal::SampleFormat::U8 => {
+                build_stream::<u8>(&device, &stream_config, samples_tx, error_thread.clone())
+            }
+            cpal::SampleFormat::I16 => {
+                build_stream::<i16>(&device, &stream_config, samples_tx, error_thread.clone())
+            }
+            cpal::SampleFormat::U16 => {
+                build_stream::<u16>(&device, &stream_config, samples_tx, error_thread.clone())
+            }
+            cpal::SampleFormat::I32 => {
+                build_stream::<i32>(&device, &stream_config, samples_tx, error_thread.clone())
+            }
+            cpal::SampleFormat::U32 => {
+                build_stream::<u32>(&device, &stream_config, samples_tx, error_thread.clone())
+            }
+            cpal::SampleFormat::I64 => {
+                build_stream::<i64>(&device, &stream_config, samples_tx, error_thread.clone())
+            }
+            cpal::SampleFormat::U64 => {
+                build_stream::<u64>(&device, &stream_config, samples_tx, error_thread.clone())
+            }
+            other => Err(format!("Unsupported input sample format: {other:?}")),
+        };
 
         let stream = match stream {
             Ok(s) => s,
             Err(e) => {
-                eprintln!("[recording] failed to build stream: {e}");
+                let _ = ready_tx.send(Err(e));
                 return;
             }
         };
 
         if let Err(e) = stream.play() {
-            eprintln!("[recording] failed to start stream: {e}");
+            let _ = ready_tx.send(Err(e.to_string()));
+            return;
+        }
+        if ready_tx.send(Ok(())).is_err() {
             return;
         }
 
-        // Keep the stream alive until stop_flag is set.
+        let mut last_flush = std::time::Instant::now();
         while !stop_flag_thread.load(Ordering::Relaxed) {
-            std::thread::sleep(std::time::Duration::from_millis(50));
+            if error_thread.lock().map(|e| e.is_some()).unwrap_or(true) {
+                break;
+            }
+            if let Ok(samples) = samples_rx.recv_timeout(std::time::Duration::from_millis(50)) {
+                if let Err(e) = write_capture_block(&mut writer, &samples) {
+                    if let Ok(mut error) = error_thread.lock() {
+                        *error = Some(e);
+                    }
+                    break;
+                }
+            }
+            if last_flush.elapsed().as_secs() >= 1 {
+                if let Err(e) = writer.flush() {
+                    if let Ok(mut error) = error_thread.lock() {
+                        *error = Some(e.to_string());
+                    }
+                    break;
+                }
+                last_flush = std::time::Instant::now();
+            }
         }
 
         // stream is dropped here, stopping capture.
         drop(stream);
-        drop(output_path_buf); // unused in thread, just for move semantics
+        for samples in samples_rx.try_iter() {
+            if let Err(e) = write_capture_block(&mut writer, &samples) {
+                if let Ok(mut error) = error_thread.lock() {
+                    *error = Some(e);
+                }
+                break;
+            }
+        }
+        if let Err(e) = writer.finalize() {
+            if let Ok(mut error) = error_thread.lock() {
+                *error = Some(e.to_string());
+            }
+        }
     });
+
+    match ready_rx.recv_timeout(std::time::Duration::from_secs(5)) {
+        Ok(Ok(())) => {}
+        result => {
+            stop_flag.store(true, Ordering::Relaxed);
+            let _ = thread.join();
+            return Err(match result {
+                Ok(Err(e)) => e,
+                _ => "Input device startup timed out".into(),
+            });
+        }
+    }
 
     Ok(RecordingHandle {
         stop_flag,
-        samples,
-        spec,
         output_path: output_path.to_path_buf(),
         thread: Some(thread),
+        error,
     })
+}
+
+fn build_stream<T>(
+    device: &cpal::Device,
+    config: &cpal::StreamConfig,
+    samples: std::sync::mpsc::SyncSender<Vec<f32>>,
+    error: Arc<Mutex<Option<String>>>,
+) -> Result<cpal::Stream, String>
+where
+    T: cpal::SizedSample,
+    f32: cpal::FromSample<T>,
+{
+    let callback_error = error.clone();
+    device
+        .build_input_stream(
+            config,
+            move |data: &[T], _| {
+                let block = data
+                    .iter()
+                    .map(|s| <f32 as cpal::FromSample<T>>::from_sample_(*s))
+                    .collect();
+                if samples.try_send(block).is_err() {
+                    if let Ok(mut e) = callback_error.lock() {
+                        *e = Some("Capture queue overflow; partial take is preserved".into());
+                    }
+                }
+            },
+            move |e| {
+                if let Ok(mut error) = error.lock() {
+                    *error = Some(e.to_string());
+                }
+            },
+            None,
+        )
+        .map_err(|e| e.to_string())
+}
+fn write_capture_block<W: std::io::Write + std::io::Seek>(
+    writer: &mut hound::WavWriter<W>,
+    samples: &[f32],
+) -> Result<(), String> {
+    for sample in samples {
+        writer.write_sample(*sample).map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// Result of placing a finished recording onto the timeline.
@@ -154,8 +286,8 @@ pub fn import_recording_to_timeline(
         .map(|track| track.id.clone())
         .ok_or("No armed audio track to receive the recording")?;
 
-    let reader = hound::WavReader::open(wav_path)
-        .map_err(|e| format!("Recorded WAV is unreadable: {e}"))?;
+    let reader =
+        hound::WavReader::open(wav_path).map_err(|e| format!("Recorded WAV is unreadable: {e}"))?;
     let spec = reader.spec();
     let frames = reader.duration() as f64;
     let duration_secs = frames / spec.sample_rate.max(1) as f64;
@@ -243,8 +375,7 @@ mod tests {
         project.tracks.push(audio_track("armed-target", true));
         let wav = temp_wav(&vec![0.5f32; 8000], 8000);
 
-        let placement =
-            import_recording_to_timeline(&mut project, &wav, 8.0).expect("placement");
+        let placement = import_recording_to_timeline(&mut project, &wav, 8.0).expect("placement");
         let _ = std::fs::remove_file(&wav);
 
         assert_eq!(placement.track_id, "armed-target");
@@ -300,7 +431,7 @@ mod tests {
     }
 }
 
-/// Signal the recording thread to stop, join it, flush samples to WAV, return path.
+/// Stop capture after draining its bounded queue, finalize the WAV, and return its path.
 pub fn stop_recording(mut handle: RecordingHandle) -> Result<PathBuf, String> {
     // Signal thread to stop and wait for it.
     handle.stop_flag.store(true, Ordering::Relaxed);
@@ -311,25 +442,21 @@ pub fn stop_recording(mut handle: RecordingHandle) -> Result<PathBuf, String> {
         }
     }
 
-    let samples = handle
-        .samples
-        .lock()
-        .map_err(|_| "sample buffer lock error")?
-        .clone();
-    let spec = handle.spec;
     let path = handle.output_path.clone();
-
-    let mut writer =
-        hound::WavWriter::create(&path, spec).map_err(|e| format!("Failed to create WAV: {e}"))?;
-
-    for sample in &samples {
-        writer
-            .write_sample(*sample)
-            .map_err(|e| format!("WAV write error: {e}"))?;
+    if let Some(error) = handle
+        .error
+        .lock()
+        .map_err(|_| "Capture error lock failed")?
+        .as_ref()
+    {
+        return Err(format!(
+            "{error}. Captured WAV preserved at {}",
+            path.display()
+        ));
     }
-
-    writer
-        .finalize()
-        .map_err(|e| format!("WAV finalize error: {e}"))?;
+    let reader = hound::WavReader::open(&path).map_err(|e| e.to_string())?;
+    if reader.duration() == 0 {
+        return Err("Recording contains no captured audio".into());
+    }
     Ok(path)
 }

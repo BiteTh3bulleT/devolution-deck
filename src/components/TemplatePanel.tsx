@@ -23,7 +23,7 @@ export function TemplatePanel() {
           type="button"
           onClick={async () => {
             const updated = applyTemplateToProject(project, template);
-            await api.projectUpdate(updated);
+            await api.projectUpdate(updated, project);
             await load();
           }}
           className="w-full rounded border border-deck-border bg-deck-panel hover:border-deck-cyan/40 text-left p-2 transition-colors"

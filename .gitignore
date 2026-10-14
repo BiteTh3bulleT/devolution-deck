@@ -33,3 +33,10 @@ devooo_inspector_tab_assets/
 devooo_mixer_tab_assets/
 devooo_remaining_utility_tabs_assets/
 .playwright-mcp/
+vendor/rack/rack-sys/external/
+vendor/rack/target/
+output/playwright/
+
+.playwright-cli/
+
+tools/audio-lab-cli/target/

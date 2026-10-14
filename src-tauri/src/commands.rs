@@ -4,7 +4,7 @@ use crate::assistant;
 use crate::audio::recording::RecordingHandle;
 use crate::audio::{
     compute_waveform_peaks, export_project_mixdown_to_wav, render_playback_preview,
-    render_project_track, render_project_tracks, write_wav, PlaybackHandle,
+    render_project_tracks, write_wav, PlaybackHandle,
 };
 use crate::deck;
 use crate::models::{
@@ -74,23 +74,16 @@ fn sanitize_filename(name: &str) -> String {
     out.trim_matches('_').to_string()
 }
 
-const DECK_PLAYBACK_RENDER_SECS: f64 = 180.0;
-
 fn apply_deck_playback(
     state: &State<AppState>,
-    mix: Option<crate::audio::DeckMixBuffer>,
+    mix: Option<Vec<crate::audio::PlayingDeck>>,
 ) -> Result<(), String> {
     if let Ok(mut meter_source) = state.meter_source.lock() {
         *meter_source = None;
     }
 
     match mix {
-        Some(mix) => state.playback.play_samples(
-            mix.samples,
-            mix.sample_rate,
-            mix.channels,
-            mix.timeline_start_secs,
-        ),
+        Some(mix) => state.playback.play_decks(mix),
         None => {
             state.playback.stop();
             Ok(())
@@ -98,12 +91,83 @@ fn apply_deck_playback(
     }
 }
 
-fn prepare_deck_playback(project: &Project) -> Result<Option<crate::audio::DeckMixBuffer>, String> {
+fn prepare_deck_playback(
+    project: &Project,
+) -> Result<Option<Vec<crate::audio::PlayingDeck>>, String> {
     if project.decks.iter().any(|deck| deck.playing) {
-        crate::audio::render_project_deck_mix(project, DECK_PLAYBACK_RENDER_SECS).map(Some)
+        crate::audio::prepare_live_decks(project).map(Some)
     } else {
         Ok(None)
     }
+}
+
+fn sync_deck_positions(state: &State<AppState>, project: &mut Project) {
+    for (id, position, playing) in state.playback.deck_positions() {
+        if let Some(deck) = project.decks.iter_mut().find(|d| d.id == id) {
+            deck.position_secs = position;
+            deck.playing = playing;
+            deck.beat_phase =
+                (position * (deck.tempo_bpm / deck.tempo_multiplier.max(0.01)) / 60.0).fract();
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn playback_refresh(state: State<'_, AppState>) -> Result<(), String> {
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static GENERATION: AtomicU64 = AtomicU64::new(0);
+    static LOCK: std::sync::OnceLock<tauri::async_runtime::Mutex<()>> = std::sync::OnceLock::new();
+    let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+    let _guard = LOCK
+        .get_or_init(|| tauri::async_runtime::Mutex::new(()))
+        .lock()
+        .await;
+    if GENERATION.load(Ordering::SeqCst) != generation {
+        return Ok(());
+    }
+    if !state.playback.is_playing() || !state.playback.is_arrangement() {
+        return Ok(());
+    }
+    let project = state.project.lock().map_err(|_| "lock")?.clone();
+    let input = project.clone();
+    let playback = match tauri::async_runtime::spawn_blocking(move || {
+        crate::audio::engine::prepare_project_playback(&input, 0.0)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    {
+        Ok(buffer) => buffer,
+        Err(error) if error.contains("audible material") || error.contains("rendered tracks") => {
+            state.playback.stop();
+            return Ok(());
+        }
+        Err(error) => return Err(error),
+    };
+    if GENERATION.load(Ordering::SeqCst) != generation
+        || state.project.lock().map_err(|_| "lock")?.id != project.id
+        || !state.playback.is_playing()
+        || !state.playback.is_arrangement()
+    {
+        return Ok(());
+    }
+    state.playback.replace_samples(
+        playback.buffer.samples.clone(),
+        playback.buffer.sample_rate,
+        playback.buffer.channels,
+        project
+            .loop_region
+            .as_ref()
+            .filter(|r| r.enabled)
+            .map(|r| (r.start_secs, r.end_secs)),
+    )?;
+    *state.meter_source.lock().map_err(|_| "lock")? = Some(MeterSource {
+        rendered_tracks: playback.rendered_tracks,
+        master: playback.buffer.samples,
+        master_start_secs: 0.0,
+        sample_rate: playback.buffer.sample_rate,
+        channels: playback.buffer.channels,
+    });
+    Ok(())
 }
 
 /// Validate that a path is within allowed directories (no path traversal).
@@ -176,7 +240,17 @@ fn find_deck<'a>(project: &'a Project, deck_id: &str) -> Result<&'a DeckState, S
         .ok_or_else(|| format!("Deck not found: {deck_id}"))
 }
 
+fn ensure_show_output_allowed(project: &Project) -> Result<(), String> {
+    if project.show_project.safety_state.panic_active
+        || project.show_project.safety_state.blackout.enabled
+    {
+        return Err("Show output is latched off; reset safety before firing cues".into());
+    }
+    Ok(())
+}
+
 fn execute_show_trigger(project: &mut Project, trigger_id: &str) -> Result<String, String> {
+    ensure_show_output_allowed(project)?;
     let now = now_unix_ms();
     let trigger = project
         .show_triggers
@@ -737,6 +811,11 @@ pub struct PlayClipPayload {
 /// Create new project (in-memory).
 #[tauri::command]
 pub fn project_new(state: State<AppState>) -> Result<Project, String> {
+    let recording_guard = state.recording.lock().map_err(|_| "lock")?;
+    if recording_guard.is_some() {
+        return Err("Stop recording before changing projects".into());
+    }
+    state.playback.stop();
     let mut project = Project::default();
     project.plugin_registry = plugin_host::builtin_descriptors();
     let now = now_unix_ms();
@@ -779,8 +858,14 @@ pub fn project_save(state: State<AppState>, path: String) -> Result<(), String> 
 /// Open project from path.
 #[tauri::command]
 pub fn project_open(state: State<AppState>, path: String) -> Result<Project, String> {
+    let recording_guard = state.recording.lock().map_err(|_| "lock")?;
+    if recording_guard.is_some() {
+        return Err("Stop recording before changing projects".into());
+    }
     let path_buf = PathBuf::from(&path);
     let mut project = project_io::load_project(&path_buf)?;
+    state.playback.stop();
+    plugin_host::reconcile_project(&mut project);
     if project.plugin_registry.is_empty() {
         project.plugin_registry = plugin_host::builtin_descriptors();
     }
@@ -800,13 +885,16 @@ pub fn project_open(state: State<AppState>, path: String) -> Result<Project, Str
 /// Get current project.
 #[tauri::command]
 pub fn project_get(state: State<AppState>) -> Result<Project, String> {
-    let project = state.project.lock().map_err(|_| "lock")?;
+    let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     Ok(project.clone())
 }
 
 /// Update project (e.g. title, bpm). Full replace for Phase 1.
 #[tauri::command]
 pub fn project_update(state: State<AppState>, mut project: Project) -> Result<Project, String> {
+    project_io::validate_project(&project)?;
+    plugin_host::reconcile_project(&mut project);
     project.version = crate::models::PROJECT_SCHEMA_VERSION;
     if project.plugin_registry.is_empty() {
         project.plugin_registry = plugin_host::builtin_descriptors();
@@ -824,6 +912,20 @@ pub fn project_update(state: State<AppState>, mut project: Project) -> Result<Pr
 }
 
 /// Import audio file: read metadata, add to project media, return asset.
+#[tauri::command]
+pub fn project_patch(
+    state: State<AppState>,
+    baseline: Project,
+    project: Project,
+) -> Result<Project, String> {
+    let mut current = state.project.lock().map_err(|_| "lock")?;
+    let mut next = crate::project_merge::apply(&current, &baseline, &project)?;
+    plugin_host::reconcile_project(&mut next);
+    crate::project_io::validate_project(&next)?;
+    *current = next;
+    Ok(current.clone())
+}
+
 #[tauri::command]
 pub fn media_import_audio(state: State<AppState>, path: String) -> Result<MediaAsset, String> {
     let path_buf = PathBuf::from(&path);
@@ -846,6 +948,7 @@ pub fn media_import_audio(state: State<AppState>, path: String) -> Result<MediaA
         channels: peaks.channels,
     };
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.media.push(asset.clone());
     Ok(asset)
 }
@@ -877,6 +980,7 @@ pub fn track_add(
     track_type: Option<String>,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let index = project.tracks.len() as u32;
     let tt = match track_type.as_deref() {
         Some("midi") => TrackType::Midi,
@@ -924,6 +1028,7 @@ pub fn clip_place(
     payload: PlaceClipPayload,
 ) -> Result<TimelineClip, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .get_mut(payload.track_index as usize)
@@ -986,9 +1091,16 @@ pub fn playback_play_arrangement(
     start_secs: Option<f64>,
 ) -> Result<(), String> {
     let start_secs = start_secs.unwrap_or(0.0).max(0.0);
-    let playback = {
+    let (playback, loop_region) = {
         let project = state.project.lock().map_err(|_| "lock")?;
-        crate::audio::engine::prepare_project_playback(&project, start_secs)?
+        (
+            crate::audio::engine::prepare_project_playback(&project, 0.0)?,
+            project
+                .loop_region
+                .as_ref()
+                .filter(|r| r.enabled)
+                .map(|r| (r.start_secs, r.end_secs)),
+        )
     };
     {
         let mut meter_source = state.meter_source.lock().map_err(|_| "lock")?;
@@ -1000,11 +1112,12 @@ pub fn playback_play_arrangement(
             channels: playback.buffer.channels,
         });
     }
-    state.playback.play_samples(
+    state.playback.play_arrangement(
         playback.buffer.samples,
         playback.buffer.sample_rate,
         playback.buffer.channels,
-        playback.buffer.timeline_start_secs,
+        start_secs,
+        loop_region,
     )
 }
 
@@ -1073,6 +1186,11 @@ pub fn playback_meters(state: State<AppState>) -> Result<MeterReportPayload, Str
 /// Stop playback.
 #[tauri::command]
 pub fn playback_stop(state: State<AppState>) -> Result<(), String> {
+    let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
+    for deck in &mut project.decks {
+        deck.playing = false;
+    }
     state.playback.stop();
     if let Ok(mut meter_source) = state.meter_source.lock() {
         *meter_source = None;
@@ -1118,6 +1236,7 @@ pub fn midi_clip_add(
     payload: AddMidiClipPayload,
 ) -> Result<MidiClip, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -1145,6 +1264,7 @@ pub fn midi_clip_update(
     clip: MidiClip,
 ) -> Result<MidiClip, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -1170,6 +1290,7 @@ pub fn midi_clip_delete(
     clip_id: String,
 ) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -1187,6 +1308,7 @@ pub fn midi_clip_duplicate(
     clip_id: String,
 ) -> Result<MidiClip, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -1217,11 +1339,24 @@ pub fn loop_region_set(
     end_secs: f64,
     enabled: bool,
 ) -> Result<(), String> {
+    if !start_secs.is_finite()
+        || !end_secs.is_finite()
+        || start_secs < 0.0
+        || end_secs <= start_secs
+    {
+        return Err("Loop end must follow its nonnegative start".into());
+    }
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.loop_region = Some(LoopRegion {
         start_secs,
         end_secs,
         enabled,
+    });
+    state.playback.set_loop(if enabled {
+        Some((start_secs, end_secs))
+    } else {
+        None
     });
     Ok(())
 }
@@ -1230,7 +1365,9 @@ pub fn loop_region_set(
 #[tauri::command]
 pub fn loop_region_clear(state: State<AppState>) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.loop_region = None;
+    state.playback.set_loop(None);
     Ok(())
 }
 
@@ -1246,6 +1383,7 @@ pub fn track_set_type(
     track_type: String,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -1266,6 +1404,7 @@ pub fn track_set_instrument(
     instrument: InstrumentAssignment,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -1293,13 +1432,20 @@ pub fn recording_start(
     output_path: String,
     target_buffer_ms: Option<u32>,
 ) -> Result<(), String> {
+    let mut recording = state.recording.lock().map_err(|_| "lock")?;
+    if recording.is_some() {
+        return Err("Already recording".into());
+    }
     let output_path = validate_path_safe(&std::path::PathBuf::from(&output_path))?;
+    if let Some(parent) = output_path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
     let handle = crate::audio::recording::start_recording(
         device_name.as_deref(),
         &output_path,
         target_buffer_ms,
     )?;
-    *state.recording.lock().map_err(|_| "lock")? = Some(handle);
+    *recording = Some(handle);
     Ok(())
 }
 
@@ -1327,6 +1473,7 @@ pub fn track_set_armed(
     armed: bool,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if !project.tracks.iter().any(|track| track.id == track_id) {
         return Err("Track not found".to_string());
     }
@@ -1361,6 +1508,7 @@ pub fn recording_stop_to_timeline(
         crate::audio::recording::stop_recording(handle)?
     };
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let placement =
         crate::audio::recording::import_recording_to_timeline(&mut project, &path, start_secs)?;
     Ok(RecordingPlacementPayload {
@@ -1415,7 +1563,9 @@ pub fn plugin_preflight(
 pub fn plugin_scan_default(state: State<AppState>) -> Result<Vec<PluginDescriptor>, String> {
     let roots = plugin_host::default_vst3_roots();
     let descriptors = plugin_host::scan_vst3_roots(&roots);
+    plugin_host::approve_descriptors(&descriptors)?;
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.plugin_registry = descriptors.clone();
     Ok(descriptors)
 }
@@ -1427,7 +1577,9 @@ pub fn plugin_scan_paths(
 ) -> Result<Vec<PluginDescriptor>, String> {
     let paths: Vec<PathBuf> = roots.iter().map(PathBuf::from).collect();
     let descriptors = plugin_host::scan_vst3_roots(&paths);
+    plugin_host::approve_descriptors(&descriptors)?;
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.plugin_registry = descriptors.clone();
     Ok(descriptors)
 }
@@ -1439,6 +1591,7 @@ pub fn track_plugin_insert(
     descriptor_id: String,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if !project
         .plugin_registry
         .iter()
@@ -1471,6 +1624,7 @@ pub fn track_plugin_remove(
     instance_id: String,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -1494,6 +1648,7 @@ pub fn track_plugin_move(
     to_index: u32,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -1522,6 +1677,7 @@ pub fn track_plugin_set_bypass(
     bypassed: bool,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -1545,6 +1701,7 @@ pub fn track_plugin_set_enabled(
     enabled: bool,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -1569,6 +1726,7 @@ pub fn track_plugin_set_parameter(
     value: f64,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -1608,6 +1766,7 @@ pub fn sidechain_route_add(
     amount: f64,
 ) -> Result<SidechainRoute, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if !project.tracks.iter().any(|track| track.id == from_track_id) {
         return Err("Source track not found".to_string());
     }
@@ -1634,6 +1793,7 @@ pub fn sidechain_route_update(
     enabled: bool,
 ) -> Result<SidechainRoute, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let route = project
         .sidechain_routes
         .iter_mut()
@@ -1647,6 +1807,7 @@ pub fn sidechain_route_update(
 #[tauri::command]
 pub fn sidechain_route_remove(state: State<AppState>, route_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project
         .sidechain_routes
         .retain(|route| route.id != route_id);
@@ -1671,6 +1832,7 @@ pub fn stem_export_start(
     config: StemExportConfig,
 ) -> Result<RenderJob, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let rendered = render_project_tracks(&project, config.include_muted)?;
     let output_dir = PathBuf::from(&config.output_dir);
     let output_dir = validate_path_safe(&output_dir)?;
@@ -1749,6 +1911,7 @@ pub fn mixdown_export_start(
     config: MixdownExportConfig,
 ) -> Result<RenderJob, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let start_secs = config.start_secs.unwrap_or(0.0).max(0.0);
     if let Some(end_secs) = config.end_secs {
         if end_secs <= start_secs {
@@ -1800,7 +1963,16 @@ pub fn track_freeze(
     output_dir: String,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
-    let rendered = render_project_track(&project, track_id.as_str())?;
+    sync_deck_positions(&state, &mut project);
+    if let Some(track) = project
+        .tracks
+        .iter()
+        .find(|t| t.id == track_id && t.freeze_state.is_frozen)
+    {
+        return Ok(track.clone());
+    }
+    let rendered =
+        crate::audio::render_project_track_pre_mixer(&project, track_id.as_str(), false)?;
     let output_dir = PathBuf::from(output_dir);
     let output_dir = validate_path_safe(&output_dir)?;
     std::fs::create_dir_all(&output_dir).map_err(|e| e.to_string())?;
@@ -1851,6 +2023,7 @@ pub fn track_freeze(
 #[tauri::command]
 pub fn track_unfreeze(state: State<AppState>, track_id: String) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -1874,7 +2047,16 @@ pub fn track_render_in_place(
     output_dir: String,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
-    let rendered = render_project_track(&project, track_id.as_str())?;
+    sync_deck_positions(&state, &mut project);
+    if project
+        .tracks
+        .iter()
+        .any(|t| t.id == track_id && t.freeze_state.is_frozen)
+    {
+        return Err("Unfreeze the track before rendering in place".into());
+    }
+    let project_bpm = project.bpm;
+    let rendered = crate::audio::render_project_track_pre_mixer(&project, track_id.as_str(), true)?;
     let sample_rate = rendered.sample_rate;
     let channels = rendered.channels.max(1) as usize;
     let total_frames = rendered.samples.len() / channels;
@@ -1920,6 +2102,7 @@ pub fn track_render_in_place(
         warp: None,
         slice_markers: vec![],
     };
+    crate::audio::editing::remove_range(track, start_secs, end_secs, project_bpm);
     track.clips.push(clip.clone());
     Ok(track.clone())
 }
@@ -1935,6 +2118,7 @@ pub fn take_lane_add(
     name: Option<String>,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -1961,6 +2145,7 @@ pub fn take_lane_clip_add(
     duration_secs: f64,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -1992,6 +2177,7 @@ pub fn comp_region_set(
     fade_secs: f64,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -2015,6 +2201,7 @@ pub fn comp_region_clear(
     region_id: String,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let track = project
         .tracks
         .iter_mut()
@@ -2042,6 +2229,7 @@ pub fn recovery_snapshot_save(
     let snapshot = recovery::save_snapshot(&project_clone, reason.as_deref().unwrap_or("manual"))?;
     // Re-acquire lock to update snapshot list
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.recovery_snapshots.push(snapshot.clone());
     project
         .recovery_snapshots
@@ -2060,10 +2248,18 @@ pub fn recovery_snapshot_restore(
     state: State<AppState>,
     snapshot_path: String,
 ) -> Result<Project, String> {
+    let recording_guard = state.recording.lock().map_err(|_| "lock")?;
+    if recording_guard.is_some() {
+        return Err("Stop recording before changing projects".into());
+    }
     let path = PathBuf::from(snapshot_path);
     let restored = recovery::load_snapshot(&path)?;
+    project_io::validate_project(&restored)?;
+    state.playback.stop();
     let mut project = restored.clone();
+    plugin_host::reconcile_project(&mut project);
     project.version = crate::models::PROJECT_SCHEMA_VERSION;
+    *state.project_path.lock().map_err(|_| "lock")? = None;
     *state.project.lock().map_err(|_| "lock")? = project.clone();
     Ok(project)
 }
@@ -2078,6 +2274,7 @@ pub fn monitoring_update(
     monitoring: MonitoringState,
 ) -> Result<MonitoringState, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.monitoring = monitoring.clone();
     Ok(monitoring)
 }
@@ -2085,6 +2282,7 @@ pub fn monitoring_update(
 #[tauri::command]
 pub fn autosave_interval_set(state: State<AppState>, interval_secs: u32) -> Result<u32, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.autosave_interval_secs = interval_secs.clamp(10, 3600);
     Ok(project.autosave_interval_secs)
 }
@@ -2095,6 +2293,7 @@ pub fn shortcut_bindings_set(
     bindings: Vec<ShortcutBinding>,
 ) -> Result<Vec<ShortcutBinding>, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.shortcuts = bindings.clone();
     Ok(bindings)
 }
@@ -2121,6 +2320,7 @@ pub fn assistant_asset_classify(
     apply_tags: bool,
 ) -> Result<Vec<AssetClassification>, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let classifications = assistant::classify_assets(&project);
     project.asset_classifications = classifications.clone();
     if apply_tags {
@@ -2142,6 +2342,7 @@ pub fn assistant_preset_apply(
     preset_id: String,
 ) -> Result<Track, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let presets = assistant::vocal_assistant_presets(&project.plugin_registry);
     let preset = presets
         .iter()
@@ -2186,6 +2387,7 @@ pub fn assistant_preset_apply(
 #[tauri::command]
 pub fn dashboard_insights_generate(state: State<AppState>) -> Result<Vec<ProducerInsight>, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let insights = assistant::producer_insights(&project);
     project.dashboard_widget_state.last_refresh_unix_ms = now_unix_ms();
     Ok(insights)
@@ -2197,6 +2399,7 @@ pub fn dashboard_widget_state_update(
     widget_state: DashboardWidgetState,
 ) -> Result<DashboardWidgetState, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.dashboard_widget_state = widget_state.clone();
     Ok(widget_state)
 }
@@ -2209,6 +2412,7 @@ pub fn performance_mode_update(
     mode.launch_quantize_beats = mode.launch_quantize_beats.clamp(1, 16);
     mode.crossfader = mode.crossfader.clamp(-1.0, 1.0);
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.performance_mode = mode.clone();
     Ok(mode)
 }
@@ -2228,6 +2432,7 @@ pub fn performance_macro_upsert(
     }
 
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(existing) = project
         .performance_macros
         .iter_mut()
@@ -2243,6 +2448,7 @@ pub fn performance_macro_upsert(
 #[tauri::command]
 pub fn performance_macro_remove(state: State<AppState>, macro_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project
         .performance_macros
         .retain(|entry| entry.id != macro_id);
@@ -2261,6 +2467,7 @@ pub fn performance_macro_trigger(
     macro_id: String,
 ) -> Result<PerformanceMacro, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let macro_config = project
         .performance_macros
         .iter()
@@ -2311,6 +2518,7 @@ pub fn scene_trigger_upsert(
 ) -> Result<SceneTrigger, String> {
     trigger.launch_quantize_beats = trigger.launch_quantize_beats.clamp(1, 16);
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(existing) = project
         .scene_triggers
         .iter_mut()
@@ -2326,6 +2534,7 @@ pub fn scene_trigger_upsert(
 #[tauri::command]
 pub fn scene_trigger_remove(state: State<AppState>, trigger_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project
         .scene_triggers
         .retain(|entry| entry.id != trigger_id);
@@ -2335,6 +2544,7 @@ pub fn scene_trigger_remove(state: State<AppState>, trigger_id: String) -> Resul
 #[tauri::command]
 pub fn show_cue_upsert(state: State<AppState>, cue: ShowCue) -> Result<ShowCue, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(existing) = project
         .show_cues
         .iter_mut()
@@ -2350,6 +2560,7 @@ pub fn show_cue_upsert(state: State<AppState>, cue: ShowCue) -> Result<ShowCue, 
 #[tauri::command]
 pub fn show_cue_remove(state: State<AppState>, cue_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.show_cues.retain(|entry| entry.id != cue_id);
     project
         .lighting_cue_bindings
@@ -2360,6 +2571,7 @@ pub fn show_cue_remove(state: State<AppState>, cue_id: String) -> Result<(), Str
 #[tauri::command]
 pub fn show_cue_preview(state: State<AppState>, cue_id: String) -> Result<String, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let cue = project
         .show_cues
         .iter()
@@ -2376,6 +2588,7 @@ pub fn lighting_cue_binding_upsert(
     binding: LightingCueBinding,
 ) -> Result<LightingCueBinding, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(existing) = project
         .lighting_cue_bindings
         .iter_mut()
@@ -2394,6 +2607,7 @@ pub fn lighting_cue_binding_remove(
     binding_id: String,
 ) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project
         .lighting_cue_bindings
         .retain(|entry| entry.id != binding_id);
@@ -2409,6 +2623,7 @@ pub fn visual_sync_update(
     visual_sync.fps_limit = visual_sync.fps_limit.clamp(24, 240);
     visual_sync.latency_ms = visual_sync.latency_ms.clamp(0.0, 500.0);
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.visual_sync = visual_sync.clone();
     Ok(visual_sync)
 }
@@ -2466,6 +2681,7 @@ pub fn branding_update(
         branding.performance_palette = defaults.performance_palette;
     }
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.branding = branding.clone();
     Ok(branding)
 }
@@ -2480,6 +2696,7 @@ pub fn library_item_analyze_upsert(
     media_asset_id: String,
 ) -> Result<LibraryItem, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let asset = project
         .media
         .iter()
@@ -2527,6 +2744,7 @@ pub fn library_item_update(
     item: LibraryItem,
 ) -> Result<LibraryItem, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(slot) = project
         .library_items
         .iter_mut()
@@ -2547,6 +2765,7 @@ pub fn crate_upsert(state: State<AppState>, mut crate_config: Crate) -> Result<C
         crate_config.name
     };
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(slot) = project
         .crates
         .iter_mut()
@@ -2562,6 +2781,7 @@ pub fn crate_upsert(state: State<AppState>, mut crate_config: Crate) -> Result<C
 #[tauri::command]
 pub fn crate_remove(state: State<AppState>, crate_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.crates.retain(|entry| entry.id != crate_id);
     Ok(())
 }
@@ -2573,6 +2793,7 @@ pub fn crate_item_add(
     item_id: String,
 ) -> Result<Crate, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if !project
         .library_items
         .iter()
@@ -2598,6 +2819,7 @@ pub fn crate_item_remove(
     item_id: String,
 ) -> Result<Crate, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let crate_state = project
         .crates
         .iter_mut()
@@ -2614,6 +2836,7 @@ pub fn deck_load_track(
     library_item_id: String,
 ) -> Result<DeckState, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let item = project
         .library_items
         .iter()
@@ -2627,7 +2850,6 @@ pub fn deck_load_track(
     {
         return Err("Media asset not found".to_string());
     }
-    let project_bpm = project.bpm.max(1.0);
     let sync_quantize_beats = project.deck_sync.sync_quantize_beats.max(1);
     let target_bpm = item.bpm.unwrap_or(project.bpm);
     let deck_state = find_deck_mut(&mut project, &deck_id)?;
@@ -2638,12 +2860,16 @@ pub fn deck_load_track(
     deck_state.playing = false;
     deck_state.position_secs = 0.0;
     deck_state.tempo_bpm = target_bpm;
-    deck_state.tempo_multiplier = (target_bpm / project_bpm).clamp(0.5, 2.0);
+    deck_state.tempo_multiplier = 1.0;
     deck_state.hot_cues = item.cue_points.clone();
     deck_state.loop_state = item.saved_loops.first().cloned();
     deck_state.quantize_beats = sync_quantize_beats;
     deck_state.beat_phase = 0.0;
-    Ok(deck_state.clone())
+    let out = deck_state.clone();
+    let mix = prepare_deck_playback(&project)?;
+    drop(project);
+    apply_deck_playback(&state, mix)?;
+    Ok(out)
 }
 
 #[tauri::command]
@@ -2654,6 +2880,7 @@ pub fn deck_set_playing(
 ) -> Result<DeckState, String> {
     let (deck, mix) = {
         let mut project = state.project.lock().map_err(|_| "lock")?;
+        sync_deck_positions(&state, &mut project);
         let normalized = normalize_deck_id(&deck_id);
         let loaded_ref = {
             let deck_state = find_deck_mut(&mut project, &normalized)?;
@@ -2712,6 +2939,7 @@ pub fn deck_seek_position(
 ) -> Result<DeckState, String> {
     let (deck, mix) = {
         let mut project = state.project.lock().map_err(|_| "lock")?;
+        sync_deck_positions(&state, &mut project);
         let deck_state = find_deck_mut(&mut project, &deck_id)?;
         deck_state.position_secs = position_secs.max(0.0);
         let deck = deck_state.clone();
@@ -2732,6 +2960,7 @@ pub fn deck_turntable_nudge(
 ) -> Result<DeckState, String> {
     let (deck, mix) = {
         let mut project = state.project.lock().map_err(|_| "lock")?;
+        sync_deck_positions(&state, &mut project);
         let deck_state = find_deck_mut(&mut project, &deck_id)?;
         let beat_secs = 60.0 / deck_state.tempo_bpm.max(1.0);
         let delta_secs = delta_beats * beat_secs * deck_state.jog_sensitivity.clamp(0.1, 3.0);
@@ -2756,6 +2985,7 @@ pub fn deck_turntable_scratch(
 ) -> Result<DeckState, String> {
     let (deck, mix) = {
         let mut project = state.project.lock().map_err(|_| "lock")?;
+        sync_deck_positions(&state, &mut project);
         let deck_state = find_deck_mut(&mut project, &deck_id)?;
         if !deck_state.vinyl_mode {
             return Err("Vinyl mode disabled for this deck".to_string());
@@ -2784,6 +3014,7 @@ pub fn deck_turntable_configure(
     jog_sensitivity: f64,
 ) -> Result<DeckState, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let deck_state = find_deck_mut(&mut project, &deck_id)?;
     deck_state.vinyl_mode = vinyl_mode;
     deck_state.jog_sensitivity = jog_sensitivity.clamp(0.1, 3.0);
@@ -2799,6 +3030,7 @@ pub fn deck_hot_cue_set(
     color_hex: Option<String>,
 ) -> Result<CuePoint, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let cue = CuePoint {
         id: Uuid::new_v4().to_string(),
         label: if label.trim().is_empty() {
@@ -2841,6 +3073,7 @@ pub fn deck_hot_cue_trigger(
 ) -> Result<DeckState, String> {
     let (deck, mix) = {
         let mut project = state.project.lock().map_err(|_| "lock")?;
+        sync_deck_positions(&state, &mut project);
         let position = {
             let deck_state = find_deck(&project, &deck_id)?;
             let cue = deck_state
@@ -2887,6 +3120,7 @@ pub fn deck_hot_cue_remove(
     cue_id: String,
 ) -> Result<DeckState, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let (loaded_reference, hot_cues_snapshot) = {
         let deck_state = find_deck_mut(&mut project, &deck_id)?;
         deck_state.hot_cues.retain(|entry| entry.id != cue_id);
@@ -2914,6 +3148,7 @@ pub fn deck_loop_set(
 ) -> Result<LoopState, String> {
     let (loop_state, mix) = {
         let mut project = state.project.lock().map_err(|_| "lock")?;
+        sync_deck_positions(&state, &mut project);
         let loop_state = LoopState {
             enabled: true,
             start_secs: start_secs.max(0.0),
@@ -2968,6 +3203,7 @@ pub fn deck_loop_set(
 pub fn deck_loop_clear(state: State<AppState>, deck_id: String) -> Result<DeckState, String> {
     let (deck, mix) = {
         let mut project = state.project.lock().map_err(|_| "lock")?;
+        sync_deck_positions(&state, &mut project);
         let deck_state = find_deck_mut(&mut project, &deck_id)?;
         deck_state.loop_state = None;
         let deck = deck_state.clone();
@@ -2989,6 +3225,7 @@ pub fn deck_sync_update(
     sync.tempo_tolerance = sync.tempo_tolerance.clamp(0.0, 0.5);
     sync.master_deck_id = normalize_deck_id(&sync.master_deck_id);
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.deck_sync = sync.clone();
     Ok(sync)
 }
@@ -3000,6 +3237,7 @@ pub fn deck_sync_apply(
     follower_deck_id: String,
 ) -> Result<Vec<DeckState>, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let sync_quantize_beats = project.deck_sync.sync_quantize_beats;
     let master_idx = project
         .decks
@@ -3021,7 +3259,11 @@ pub fn deck_sync_apply(
         .ok_or("Follower deck not found")?;
     deck::sync_follower(&master, follower, sync_quantize_beats);
     project.deck_sync.last_sync_unix_ms = Some(now_unix_ms());
-    Ok(project.decks.clone())
+    let out = project.decks.clone();
+    let mix = prepare_deck_playback(&project)?;
+    drop(project);
+    apply_deck_playback(&state, mix)?;
+    Ok(out)
 }
 
 #[tauri::command]
@@ -3037,6 +3279,7 @@ pub fn crossfader_update(
 
     let (updated, mix) = {
         let mut project = state.project.lock().map_err(|_| "lock")?;
+        sync_deck_positions(&state, &mut project);
         project.performance_mode.crossfader = crossfader.position;
         for binding in &crossfader.track_bindings {
             if let Some(track) = project
@@ -3065,6 +3308,7 @@ pub fn crossfader_bind_track(
     side: CrossfaderSide,
 ) -> Result<CrossfaderState, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if !project.tracks.iter().any(|track| track.id == track_id) {
         return Err("Track not found".to_string());
     }
@@ -3095,6 +3339,7 @@ pub fn sampler_slot_upsert(
     slot: SamplerSlot,
 ) -> Result<SamplerSlot, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(item_id) = &slot.library_item_id {
         if !project.library_items.iter().any(|item| &item.id == item_id) {
             return Err("Sampler slot library item not found".to_string());
@@ -3115,6 +3360,7 @@ pub fn sampler_slot_upsert(
 #[tauri::command]
 pub fn sampler_slot_remove(state: State<AppState>, slot_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.sampler_slots.retain(|entry| entry.id != slot_id);
     for pad in &mut project.performance_pads {
         if pad.sampler_slot_id.as_deref() == Some(slot_id.as_str()) {
@@ -3130,6 +3376,7 @@ pub fn performance_pad_upsert(
     pad: PerformancePad,
 ) -> Result<PerformancePad, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(existing) = project
         .performance_pads
         .iter_mut()
@@ -3145,6 +3392,7 @@ pub fn performance_pad_upsert(
 #[tauri::command]
 pub fn performance_pad_remove(state: State<AppState>, pad_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.performance_pads.retain(|entry| entry.id != pad_id);
     Ok(())
 }
@@ -3155,6 +3403,7 @@ pub fn performance_pad_trigger(
     pad_id: String,
 ) -> Result<PerformancePad, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let project_bpm = project.bpm;
     let mut pad = project
         .performance_pads
@@ -3261,6 +3510,7 @@ pub fn performance_pad_trigger(
 #[tauri::command]
 pub fn setlist_upsert(state: State<AppState>, setlist: Setlist) -> Result<Setlist, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(existing) = project
         .setlists
         .iter_mut()
@@ -3276,6 +3526,7 @@ pub fn setlist_upsert(state: State<AppState>, setlist: Setlist) -> Result<Setlis
 #[tauri::command]
 pub fn setlist_remove(state: State<AppState>, setlist_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.setlists.retain(|entry| entry.id != setlist_id);
     if project.active_setlist_id.as_deref() == Some(setlist_id.as_str()) {
         project.active_setlist_id = None;
@@ -3289,6 +3540,7 @@ pub fn setlist_set_active(
     setlist_id: Option<String>,
 ) -> Result<Option<String>, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(id) = &setlist_id {
         if !project.setlists.iter().any(|entry| &entry.id == id) {
             return Err("Setlist not found".to_string());
@@ -3306,6 +3558,7 @@ pub fn setlist_entry_mark_played(
     played: bool,
 ) -> Result<Setlist, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let setlist = project
         .setlists
         .iter_mut()
@@ -3329,6 +3582,7 @@ pub fn show_trigger_upsert(
     trigger: ShowTrigger,
 ) -> Result<ShowTrigger, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(existing) = project
         .show_triggers
         .iter_mut()
@@ -3344,6 +3598,7 @@ pub fn show_trigger_upsert(
 #[tauri::command]
 pub fn show_trigger_remove(state: State<AppState>, trigger_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.show_triggers.retain(|entry| entry.id != trigger_id);
     project
         .deck_event_bindings
@@ -3359,6 +3614,7 @@ pub fn show_trigger_remove(state: State<AppState>, trigger_id: String) -> Result
 #[tauri::command]
 pub fn show_trigger_execute(state: State<AppState>, trigger_id: String) -> Result<String, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     execute_show_trigger(&mut project, &trigger_id)
 }
 
@@ -3368,6 +3624,7 @@ pub fn deck_event_binding_upsert(
     binding: DeckEventBinding,
 ) -> Result<DeckEventBinding, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if !project
         .show_triggers
         .iter()
@@ -3390,6 +3647,7 @@ pub fn deck_event_binding_upsert(
 #[tauri::command]
 pub fn deck_event_binding_remove(state: State<AppState>, binding_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project
         .deck_event_bindings
         .retain(|entry| entry.id != binding_id);
@@ -3402,6 +3660,7 @@ pub fn deck_scene_link_upsert(
     link: DeckSceneLink,
 ) -> Result<DeckSceneLink, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if !project
         .session
         .scenes
@@ -3434,6 +3693,7 @@ pub fn deck_scene_link_upsert(
 #[tauri::command]
 pub fn deck_scene_link_remove(state: State<AppState>, link_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.deck_scene_links.retain(|entry| entry.id != link_id);
     Ok(())
 }
@@ -3444,6 +3704,7 @@ pub fn deck_scene_coordinate(
     scene_id: String,
 ) -> Result<Vec<String>, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if !project
         .session
         .scenes
@@ -3526,6 +3787,7 @@ pub fn show_project_update(
     }
 
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.show_project = show_project.clone();
     refresh_show_dashboard(&mut project, now_unix_ms());
     Ok(show_project)
@@ -3547,6 +3809,7 @@ pub fn dmx_bridge_update(
         bridge.protocol = "artnet".to_string();
     }
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project.show_project.dmx_bridge = bridge.clone();
     refresh_show_dashboard(&mut project, now_unix_ms());
     Ok(bridge)
@@ -3570,6 +3833,7 @@ pub fn lighting_cue_upsert(
     };
 
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(existing) = project
         .show_project
         .lighting_cues
@@ -3587,6 +3851,7 @@ pub fn lighting_cue_upsert(
 #[tauri::command]
 pub fn lighting_cue_remove(state: State<AppState>, cue_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project
         .show_project
         .lighting_cues
@@ -3615,6 +3880,8 @@ pub fn lighting_cue_remove(state: State<AppState>, cue_id: String) -> Result<(),
 #[tauri::command]
 pub fn lighting_cue_execute(state: State<AppState>, cue_id: String) -> Result<String, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
+    ensure_show_output_allowed(&project)?;
     let now = now_unix_ms();
     let cue = project
         .show_project
@@ -3668,6 +3935,7 @@ pub fn visual_cue_upsert(state: State<AppState>, mut cue: VisualCue) -> Result<V
     };
 
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(existing) = project
         .show_project
         .visual_cues
@@ -3685,6 +3953,7 @@ pub fn visual_cue_upsert(state: State<AppState>, mut cue: VisualCue) -> Result<V
 #[tauri::command]
 pub fn visual_cue_remove(state: State<AppState>, cue_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project
         .show_project
         .visual_cues
@@ -3708,6 +3977,8 @@ pub fn visual_cue_remove(state: State<AppState>, cue_id: String) -> Result<(), S
 #[tauri::command]
 pub fn visual_cue_execute(state: State<AppState>, cue_id: String) -> Result<String, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
+    ensure_show_output_allowed(&project)?;
     let now = now_unix_ms();
     let cue = project
         .show_project
@@ -3757,6 +4028,7 @@ pub fn cue_sequence_upsert(
     });
 
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(existing) = project
         .show_project
         .cue_sequences
@@ -3774,6 +4046,7 @@ pub fn cue_sequence_upsert(
 #[tauri::command]
 pub fn cue_sequence_remove(state: State<AppState>, sequence_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project
         .show_project
         .cue_sequences
@@ -3802,6 +4075,7 @@ pub fn cue_sequence_start(
     sequence_id: String,
 ) -> Result<CueSequence, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     let sequence = project
         .show_project
@@ -3815,7 +4089,7 @@ pub fn cue_sequence_start(
     }
     project.show_project.active_sequence_id = Some(sequence.id.clone());
     project.show_project.dashboard.active_sequence_id = Some(sequence.id.clone());
-    project.show_project.dashboard.last_sequence_beat = 0.0;
+    project.show_project.dashboard.last_sequence_beat = -1.0;
     show_control::push_dashboard_event(
         &mut project.show_project.dashboard,
         "sequence",
@@ -3830,6 +4104,7 @@ pub fn cue_sequence_start(
 #[tauri::command]
 pub fn cue_sequence_stop(state: State<AppState>) -> Result<Option<String>, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     let active = project.show_project.active_sequence_id.clone();
     project.show_project.active_sequence_id = None;
@@ -3854,6 +4129,8 @@ pub fn cue_sequence_tick(
     position_beats: f64,
 ) -> Result<Vec<String>, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
+    ensure_show_output_allowed(&project)?;
     let now = now_unix_ms();
     let sequence_id = project
         .show_project
@@ -3871,10 +4148,10 @@ pub fn cue_sequence_tick(
         return Err("Active cue sequence is disabled".to_string());
     }
 
-    let last_beat = project.show_project.dashboard.last_sequence_beat.max(0.0);
+    let last_beat = project.show_project.dashboard.last_sequence_beat;
     let mut effective_last = last_beat;
     if position_beats < last_beat {
-        effective_last = 0.0;
+        effective_last = -1.0;
     }
 
     let mut actions = Vec::new();
@@ -3968,6 +4245,7 @@ pub fn cue_trigger_upsert(
         trigger.name
     };
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(existing) = project
         .show_project
         .cue_triggers
@@ -3985,6 +4263,7 @@ pub fn cue_trigger_upsert(
 #[tauri::command]
 pub fn cue_trigger_remove(state: State<AppState>, trigger_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project
         .show_project
         .cue_triggers
@@ -3996,6 +4275,8 @@ pub fn cue_trigger_remove(state: State<AppState>, trigger_id: String) -> Result<
 #[tauri::command]
 pub fn cue_trigger_fire(state: State<AppState>, trigger_id: String) -> Result<Vec<String>, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
+    ensure_show_output_allowed(&project)?;
     let now = now_unix_ms();
     let trigger = project
         .show_project
@@ -4018,7 +4299,7 @@ pub fn cue_trigger_fire(state: State<AppState>, trigger_id: String) -> Result<Ve
         {
             project.show_project.active_sequence_id = Some(sequence_id.clone());
             project.show_project.dashboard.active_sequence_id = Some(sequence_id.clone());
-            project.show_project.dashboard.last_sequence_beat = 0.0;
+            project.show_project.dashboard.last_sequence_beat = -1.0;
             actions.push(format!("Started sequence {sequence_id}"));
         }
     }
@@ -4062,6 +4343,7 @@ pub fn song_cue_map_upsert(
         map.transition_event
     };
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if let Some(existing) = project
         .show_project
         .song_cue_maps
@@ -4079,6 +4361,7 @@ pub fn song_cue_map_upsert(
 #[tauri::command]
 pub fn song_cue_map_remove(state: State<AppState>, map_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project
         .show_project
         .song_cue_maps
@@ -4095,6 +4378,8 @@ pub fn song_cue_map_trigger(
     transition_event: String,
 ) -> Result<Vec<String>, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    ensure_show_output_allowed(&project)?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     let maps = project
         .show_project
@@ -4129,7 +4414,7 @@ pub fn song_cue_map_trigger(
             {
                 project.show_project.active_sequence_id = Some(sequence_id.clone());
                 project.show_project.dashboard.active_sequence_id = Some(sequence_id.clone());
-                project.show_project.dashboard.last_sequence_beat = 0.0;
+                project.show_project.dashboard.last_sequence_beat = -1.0;
                 actions.push(format!("Map started sequence {sequence_id}"));
             }
         }
@@ -4184,6 +4469,7 @@ pub fn device_binding_upsert(
     binding: DeviceBinding,
 ) -> Result<DeviceBinding, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if binding.midi_binding.is_none()
         && binding.osc_binding.is_none()
         && binding.dmx_binding.is_none()
@@ -4209,6 +4495,7 @@ pub fn device_binding_upsert(
 #[tauri::command]
 pub fn device_binding_remove(state: State<AppState>, binding_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project
         .show_project
         .device_bindings
@@ -4220,6 +4507,8 @@ pub fn device_binding_remove(state: State<AppState>, binding_id: String) -> Resu
 #[tauri::command]
 pub fn device_binding_test(state: State<AppState>, binding_id: String) -> Result<String, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
+    ensure_show_output_allowed(&project)?;
     let now = now_unix_ms();
     let binding = project
         .show_project
@@ -4342,6 +4631,7 @@ pub fn fallback_profile_upsert(
         profile.name
     };
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     if profile.dmx_universes.is_empty() {
         profile.dmx_universes = project.show_project.dmx_universes.clone();
     }
@@ -4362,6 +4652,7 @@ pub fn fallback_profile_upsert(
 #[tauri::command]
 pub fn fallback_profile_remove(state: State<AppState>, profile_id: String) -> Result<(), String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     project
         .show_project
         .fallback_profiles
@@ -4376,6 +4667,8 @@ pub fn fallback_profile_apply(
     profile_id: String,
 ) -> Result<FallbackProfile, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
+    ensure_show_output_allowed(&project)?;
     let now = now_unix_ms();
     let profile = project
         .show_project
@@ -4410,6 +4703,7 @@ pub fn safety_blackout_set(
     fade_ms: u32,
 ) -> Result<BlackoutState, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     project.show_project.safety_state.blackout.enabled = enabled;
     project.show_project.safety_state.blackout.fade_ms = fade_ms.min(10_000);
@@ -4447,6 +4741,7 @@ pub fn safety_panic(
     action: Option<PanicAction>,
 ) -> Result<SafetyState, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     let panic_action = action.unwrap_or_default();
     project.show_project.safety_state.panic_active = true;
@@ -4456,6 +4751,9 @@ pub fn safety_panic(
         state.playback.stop();
     }
     if panic_action.stop_decks {
+        if !state.playback.is_arrangement() {
+            state.playback.stop();
+        }
         for deck_state in &mut project.decks {
             deck_state.playing = false;
         }
@@ -4473,10 +4771,6 @@ pub fn safety_panic(
             .blackout
             .last_update_unix_ms = Some(now);
         show_control::apply_blackout(&mut project.show_project.dmx_universes, true, now);
-        let _ = show_control::flush_dmx_universes(
-            &project.show_project.dmx_bridge,
-            &project.show_project.dmx_universes,
-        );
     }
     if panic_action.apply_fallback {
         if let Some(profile) = project.show_project.fallback_profiles.first().cloned() {
@@ -4487,6 +4781,16 @@ pub fn safety_panic(
         }
     }
 
+    if project.show_project.safety_state.blackout.enabled {
+        show_control::apply_blackout(&mut project.show_project.dmx_universes, true, now);
+    }
+    if let Err(error) = show_control::flush_dmx_universes(
+        &project.show_project.dmx_bridge,
+        &project.show_project.dmx_universes,
+    ) {
+        note_show_error(&mut project, "panic", &error, now);
+        return Err(error);
+    }
     show_control::push_dashboard_event(
         &mut project.show_project.dashboard,
         "safety",
@@ -4501,6 +4805,7 @@ pub fn safety_panic(
 #[tauri::command]
 pub fn safety_reset(state: State<AppState>) -> Result<SafetyState, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     project.show_project.safety_state.panic_active = false;
     project.show_project.safety_state.blackout.enabled = false;
@@ -4530,6 +4835,7 @@ pub fn performance_dashboard_refresh(
     state: State<AppState>,
 ) -> Result<PerformanceDashboardState, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     refresh_show_dashboard(&mut project, now);
     refresh_system_health(&mut project, now);
@@ -4546,6 +4852,7 @@ pub fn navigation_update(
     mut navigation: NavigationState,
 ) -> Result<NavigationState, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     if navigation.main_view.trim().is_empty() {
         navigation.main_view = app_mode_default_main_view(&navigation.active_mode).to_string();
@@ -4562,6 +4869,7 @@ pub fn preferences_update(
     mut preferences: UserPreferences,
 ) -> Result<UserPreferences, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     preferences.ui_scale = preferences.ui_scale.clamp(0.8, 1.5);
     project.preferences = preferences.clone();
     refresh_system_health(&mut project, now_unix_ms());
@@ -4571,6 +4879,7 @@ pub fn preferences_update(
 #[tauri::command]
 pub fn device_profiles_refresh(state: State<AppState>) -> Result<Vec<DeviceProfile>, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     project.device_profiles = build_device_profiles(&project, now);
     if project.device_profiles.is_empty() {
@@ -4584,6 +4893,7 @@ pub fn device_profiles_refresh(state: State<AppState>) -> Result<Vec<DeviceProfi
 #[tauri::command]
 pub fn device_diagnostics_run(state: State<AppState>) -> Result<DeviceDiagnosticState, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     let audio_input_devices = crate::audio::recording::list_input_devices().unwrap_or_default();
     let midi_binding_count = project
@@ -4635,6 +4945,7 @@ pub fn compatibility_report_generate(
     state: State<AppState>,
 ) -> Result<CompatibilityReport, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let report = generate_compatibility_report(&project, now_unix_ms());
     project.compatibility_reports.push(report.clone());
     if project.compatibility_reports.len() > 64 {
@@ -4651,6 +4962,7 @@ pub fn migration_plan_generate(
     target_version: Option<u32>,
 ) -> Result<MigrationPlan, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     let target = target_version.unwrap_or(crate::models::PROJECT_SCHEMA_VERSION);
     let plan = build_migration_plan(&project, now, target);
@@ -4670,6 +4982,7 @@ pub fn migration_plan_apply(
     backup_path: Option<String>,
 ) -> Result<MigrationPlan, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     let index = project
         .migration_history
@@ -4740,6 +5053,7 @@ pub fn project_missing_media_relink(
     dry_run: Option<bool>,
 ) -> Result<Vec<MediaRelinkResult>, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let dry_run = dry_run.unwrap_or(true);
 
     let roots = search_roots
@@ -4857,6 +5171,7 @@ pub fn error_report_add(
     context: Option<String>,
 ) -> Result<ErrorReport, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     let report = ErrorReport {
         id: Uuid::new_v4().to_string(),
@@ -4886,6 +5201,7 @@ pub fn error_report_ack(
     acknowledged: bool,
 ) -> Result<ErrorReport, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     let report = project
         .error_reports
@@ -4943,6 +5259,7 @@ pub fn error_report_dispatch(
     }
 
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let mut dispatched = Vec::new();
     for (report_id, result) in results {
         let Some(index) = project
@@ -4981,6 +5298,7 @@ pub fn error_report_dispatch(
 #[tauri::command]
 pub fn release_readiness_check(state: State<AppState>) -> Result<ReleaseReadinessCheck, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     let check = evaluate_release_readiness(&project, now);
     show_control::push_dashboard_event(
@@ -5003,6 +5321,7 @@ pub fn support_bundle_export(
     include_logs: bool,
 ) -> Result<SupportBundle, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     let output_path = validate_path_safe(&PathBuf::from(&path))?;
     if let Some(parent) = output_path.parent() {
@@ -5070,6 +5389,7 @@ pub fn support_bundle_export(
 #[tauri::command]
 pub fn performance_profile_capture(state: State<AppState>) -> Result<PerformanceProfile, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     let clip_count = project
         .tracks
@@ -5107,6 +5427,7 @@ pub fn release_config_update(
     mut release_config: ReleaseConfig,
 ) -> Result<ReleaseConfig, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     release_config.channel = if release_config.channel.trim().is_empty() {
         "rc".to_string()
     } else {
@@ -5128,6 +5449,7 @@ pub fn onboarding_state_update(
     mut onboarding: OnboardingState,
 ) -> Result<OnboardingState, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     onboarding.current_step_index = onboarding
         .current_step_index
@@ -5142,6 +5464,7 @@ pub fn onboarding_state_update(
 #[tauri::command]
 pub fn system_health_snapshot(state: State<AppState>) -> Result<SystemHealthSnapshot, String> {
     let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
     let now = now_unix_ms();
     refresh_system_health(&mut project, now);
     Ok(project.system_health.clone())

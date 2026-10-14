@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import * as api from "../api";
-import { useLoopStore } from "./loopStore";
+import { useRecordingStore } from "./recordingStore";
 import { useProjectStore } from "./projectStore";
 import { metronomeService } from "../services/metronome";
 import { midiSequencer } from "../services/midiSequencer";
@@ -40,13 +40,14 @@ export const useTransportStore = create<TransportState & TransportActions>((set,
       set({ positionSecs: timelineStart, status: "playing" });
       get().startPositionPoll();
     } catch (e) {
-      console.error("Play failed", e);
+      useProjectStore.setState({ error: `Playback failed: ${e}` });
       set({ status: "stopped" });
     }
   },
 
   async stop() {
     get().stopPositionPoll();
+    await useRecordingStore.getState().stopRecording();
     try {
       await api.playbackStop();
     } catch (e) {
@@ -67,6 +68,8 @@ export const useTransportStore = create<TransportState & TransportActions>((set,
       try {
         const playing = await api.playbackIsPlaying();
         if (!playing) {
+          metronomeService.stop();
+          midiSequencer.stop();
           get().stopPositionPoll();
           set({ status: "stopped" });
           return;
@@ -80,16 +83,7 @@ export const useTransportStore = create<TransportState & TransportActions>((set,
         metronomeService.tick(positionSecs, bpm);
         midiSequencer.tick(positionSecs, bpm);
 
-        // Loop region enforcement (with seeking guard to prevent stacked seeks)
-        const { region } = useLoopStore.getState();
-        if (region?.enabled && positionSecs >= region.end_secs && !get()._loopSeeking) {
-          set({ _loopSeeking: true });
-          try {
-            await api.playbackSeek(region.start_secs);
-          } finally {
-            set({ _loopSeeking: false });
-          }
-        }
+
       } catch (e) {
         console.error("Position poll failed", e);
         get().stopPositionPoll();

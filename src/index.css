@@ -1,9 +1,6 @@
-@import url("https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700&family=Space+Grotesk:wght@400;500;600&display=swap");
+@import "tailwindcss";
 @import "./styles/devooo-skin.css";
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@config "../tailwind.config.js";
 
 :root {
   --deck-bg: #07090f;

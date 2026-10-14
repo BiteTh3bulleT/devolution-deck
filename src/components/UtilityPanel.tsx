@@ -53,8 +53,10 @@ export function UtilityPanel() {
         utility_tab: tabId,
       })
       .then((navigation) => {
+        const current = useProjectStore.getState().project;
+        if (!current || current.id !== project.id) return;
         setProject({
-          ...project,
+          ...current,
           navigation,
         });
       })

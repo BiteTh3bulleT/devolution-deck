@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DeckChannelCard } from "./deck/DeckChannelCard";
 import { LibraryCratesPanel } from "./deck/LibraryCratesPanel";
 import { LiveCoordinationPanel } from "./deck/LiveCoordinationPanel";
@@ -17,6 +17,10 @@ async function runWithError(action: () => Promise<unknown>, onError: (message: s
 
 export function DeckPerformanceView() {
   const project = useProjectStore((state) => state.project);
+  useEffect(() => {
+    const timer = window.setInterval(() => { void useProjectStore.getState().load(); }, 250);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const selectedCrateId = useDjStore((state) => state.selectedCrateId);
   const selectedSetlistId = useDjStore((state) => state.selectedSetlistId);

@@ -10,6 +10,7 @@ import { Sidebar } from "./components/Sidebar";
 import { Timeline } from "./components/Timeline";
 import { TransportBar } from "./components/TransportBar";
 import { UtilityPanel } from "./components/UtilityPanel";
+import { AudioLabView } from "./components/AudioLabView";
 import { metronomeService } from "./services/metronome";
 import { useArrangementStore } from "./stores/arrangementStore";
 import { useBrowserStore } from "./stores/browserStore";
@@ -37,8 +38,8 @@ function isTypingTarget(target: EventTarget | null): boolean {
 
 function isKnownMainView(
   value: string
-): value is "arrangement" | "session" | "decks" | "performance" {
-  return value === "arrangement" || value === "session" || value === "decks" || value === "performance";
+): value is "arrangement" | "session" | "decks" | "performance" | "lab" {
+  return value === "arrangement" || value === "session" || value === "decks" || value === "performance" || value === "lab";
 }
 
 function isKnownUtilityTab(value: string): boolean {
@@ -81,6 +82,9 @@ export default function App() {
   useEffect(() => {
     if (!tauriRuntime) return;
     void load();
+    const onAudioError = (event: Event) => useProjectStore.setState({ error: (event as CustomEvent<string>).detail });
+    window.addEventListener("deck-audio-error", onAudioError);
+    return () => window.removeEventListener("deck-audio-error", onAudioError);
   }, [load, tauriRuntime]);
 
   useEffect(() => {
@@ -162,7 +166,7 @@ export default function App() {
       void api.recoverySnapshotSave("autosave");
     }, intervalSecs * 1000);
     return () => window.clearInterval(timerId);
-  }, [project?.autosave_interval_secs, project, tauriRuntime]);
+  }, [project?.autosave_interval_secs, project?.id, tauriRuntime]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -206,7 +210,7 @@ export default function App() {
 
             await transport.play(transport.positionSecs);
 
-            if (useMetronomeStore.getState().enabled) {
+            if (useMetronomeStore.getState().enabled && useTransportStore.getState().status === "playing") {
               metronomeService.setEnabled(true);
               metronomeService.start(transport.positionSecs, currentProject.bpm);
             }
@@ -316,7 +320,7 @@ export default function App() {
                   : track
               ),
             };
-            await api.projectUpdate(updatedProject);
+            await api.projectUpdate(updatedProject, currentProject);
             useArrangementStore.getState().clearAudioClipSelection();
             await useProjectStore.getState().load();
             return;
@@ -353,16 +357,17 @@ export default function App() {
       <TransportBar />
       <AppStatusStrip />
       <div className="flex flex-1 min-h-0 relative">
-        <Sidebar />
+        {mainView !== "lab" && <Sidebar />}
         <div className="flex flex-1 flex-col min-w-0 relative">
           {mainView === "arrangement" && <Timeline />}
           {mainView === "session" && <SessionLauncher />}
           {mainView === "decks" && <DeckPerformanceView />}
           {mainView === "performance" && <PerformanceModeView />}
+          {mainView === "lab" && <AudioLabView />}
           {openClip && <PianoRoll />}
           {openDrumTrack && <DrumSequencer track={openDrumTrack} onClose={closeDrumSequencer} />}
         </div>
-        <UtilityPanel />
+        {mainView !== "lab" && <UtilityPanel />}
       </div>
     </div>
   );

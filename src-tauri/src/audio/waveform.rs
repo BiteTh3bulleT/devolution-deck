@@ -96,12 +96,17 @@ pub fn compute_waveform_peaks(path: &Path, num_buckets: usize) -> Result<Wavefor
         });
     }
 
-    let samples_per_bucket = (all_samples.len() / channels).max(1) / num_buckets.max(1);
+    let frames = all_samples.len() / channels;
+    let num_buckets = num_buckets.clamp(1, 8192);
     let mut buckets = Vec::with_capacity(num_buckets);
 
     for i in 0..num_buckets {
-        let start = (i * samples_per_bucket * channels).min(all_samples.len());
-        let end = ((i + 1) * samples_per_bucket * channels).min(all_samples.len());
+        let start_frame = i * frames / num_buckets;
+        let end_frame = ((i + 1) * frames / num_buckets)
+            .max(start_frame + 1)
+            .min(frames);
+        let start = start_frame * channels;
+        let end = end_frame * channels;
         if start >= end {
             buckets.push(WaveformBucket { min: 0.0, max: 0.0 });
             continue;
