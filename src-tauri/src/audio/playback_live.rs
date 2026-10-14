@@ -50,6 +50,7 @@ struct RenderCursor {
     block: [AudioFrame; BLOCK],
     index: usize,
     cached_generation: u64,
+    clock_frame: u64,
 }
 impl RenderCursor {
     fn new(state: Arc<Mutex<OutputState>>, control: Arc<OutputControl>) -> Self {
@@ -59,6 +60,7 @@ impl RenderCursor {
             block: [AudioFrame::default(); BLOCK],
             index: BLOCK,
             cached_generation: 0,
+            clock_frame: 0,
         }
     }
     fn next_frame(&mut self, shutdown: &AtomicBool) -> AudioFrame {
@@ -88,12 +90,16 @@ impl RenderCursor {
                 }
             }
         };
+        if self.cached_generation != state.generation {
+            self.clock_frame = self.control.last_clock_frame();
+        }
         self.cached_generation = state.generation;
         for frame in &mut self.block {
             *frame = AudioFrame {
                 generation: state.generation,
                 ..Default::default()
             };
+            let mut advanced = false;
             match &mut state.content {
                 Content::Silence => {}
                 Content::Samples {
@@ -109,6 +115,7 @@ impl RenderCursor {
                         }
                     }
                     if *cursor < data.len() / 2 {
+                        advanced = true;
                         frame.left = data[*cursor * 2];
                         frame.right = data[*cursor * 2 + 1];
                         *cursor += 1;
@@ -150,9 +157,26 @@ impl RenderCursor {
                         active = true;
                     }
                     frame.position_ms = (position * 1000.0) as u64;
+                    for deck in decks.iter() {
+                        if let Some(index) = match deck.id.as_str() {
+                            "A" => Some(0),
+                            "B" => Some(1),
+                            _ => None,
+                        } {
+                            frame.deck_positions[index] = deck.position_secs;
+                            if deck.playing {
+                                frame.deck_mask |= 1 << index;
+                            }
+                        }
+                    }
+                    advanced = active;
                     frame.finished = !active;
                 }
             }
+            if advanced {
+                self.clock_frame += 1;
+            }
+            frame.engine_frame = self.clock_frame;
         }
         self.index = 0;
     }
@@ -180,6 +204,34 @@ impl PlaybackHandle {
             output: Mutex::new(output),
             pending_start: AtomicU64::new(0),
         })
+    }
+    #[cfg(feature = "test-tools")]
+    pub fn play_silent_test_decks(&self) -> Result<(), String> {
+        let source = Arc::new(vec![0.0; RATE as usize * 2]);
+        self.play_decks(vec![
+            PlayingDeck {
+                id: "A".into(),
+                left: source.clone(),
+                right: source.clone(),
+                position_secs: 0.25,
+                speed: 1.0,
+                gain: 1.0,
+                cue_gain: 0.5,
+                loop_region: Some((0.25, 1.0)),
+                playing: true,
+            },
+            PlayingDeck {
+                id: "B".into(),
+                left: source.clone(),
+                right: source,
+                position_secs: 0.5,
+                speed: 1.01,
+                gain: 1.0,
+                cue_gain: 0.5,
+                loop_region: Some((0.5, 1.2)),
+                playing: true,
+            },
+        ])
     }
     pub fn reserve_start(&self) -> u64 {
         self.pending_start.fetch_add(1, Ordering::AcqRel) + 1
@@ -295,6 +347,19 @@ impl PlaybackHandle {
             }
         }
     }
+    /// Gain-only changes keep source cursors, queued frames and clock generation intact.
+    pub(crate) fn update_deck_gains(&self, incoming: &[PlayingDeck]) -> Result<bool, String> {
+        self.ready()?;
+        let mut state=self.state.lock().map_err(|_| "Audio state lock failed")?;
+        let Content::Decks(current)=&mut state.content else {return Ok(false);};
+        if current.len()!=incoming.len() || !current.iter().all(|deck| incoming.iter().any(|next|
+            deck.id==next.id && deck.playing==next.playing && Arc::ptr_eq(&deck.left,&next.left) && Arc::ptr_eq(&deck.right,&next.right))) {return Ok(false);}
+        for deck in current {
+            let next=incoming.iter().find(|next| next.id==deck.id).ok_or("Deck gain source missing")?;
+            deck.gain=next.gain; deck.cue_gain=next.cue_gain;
+        }
+        Ok(true)
+    }
     pub(crate) fn play_decks(&self, decks: Vec<PlayingDeck>) -> Result<(), String> {
         self.ready()?;
         let active = decks.iter().any(|d| d.playing);
@@ -309,14 +374,31 @@ impl PlaybackHandle {
         }
         Ok(())
     }
+    pub fn performance_snapshot(&self) -> Option<super::output::PerformanceSnapshot> {
+        self.control.snapshot()
+    }
     pub(crate) fn deck_positions(&self) -> Vec<(String, f64, bool)> {
+        let Some(snapshot) = self.control.snapshot() else {
+            return vec![];
+        };
         self.state
             .lock()
             .ok()
-            .map(|s| match &s.content {
-                Content::Decks(ds) => ds
+            .map(|state| match &state.content {
+                Content::Decks(decks) => decks
                     .iter()
-                    .map(|d| (d.id.clone(), d.position_secs, d.playing))
+                    .filter_map(|deck| {
+                        let index = match deck.id.as_str() {
+                            "A" => 0,
+                            "B" => 1,
+                            _ => return None,
+                        };
+                        Some((
+                            deck.id.clone(),
+                            snapshot.deck_positions[index],
+                            snapshot.deck_mask & (1 << index) != 0,
+                        ))
+                    })
                     .collect(),
                 _ => vec![],
             })
@@ -471,6 +553,63 @@ mod tests {
             .play_arrangement_reserved(latest, vec![0.; 128], RATE, 2, 0., None)
             .unwrap();
         assert!(playback.is_playing());
+    }
+    #[test]
+    fn changing_crossfader_and_cue_gain_does_not_rewind_or_restart_the_deck() {
+        let playback=headless(); let audio=Arc::new(vec![0.2;48000]);
+        let original=PlayingDeck{id:"A".into(),left:audio.clone(),right:audio,position_secs:0.5,speed:1.0,gain:1.0,cue_gain:0.0,loop_region:None,playing:true};
+        playback.play_decks(vec![original.clone()]).unwrap();
+        let generation=playback.control.generation.load(Ordering::Acquire);
+        let mut update=original;update.position_secs=0.1;update.gain=0.25;update.cue_gain=0.5;
+        assert!(playback.update_deck_gains(&[update]).unwrap());
+        assert_eq!(playback.control.generation.load(Ordering::Acquire),generation);
+        let state=playback.state.lock().unwrap();
+        let Content::Decks(decks)=&state.content else {panic!("Decks disappeared")};
+        assert_eq!(decks[0].position_secs,0.5);assert_eq!(decks[0].gain,0.25);assert_eq!(decks[0].cue_gain,0.5);
+    }
+    #[test]
+    fn final_silent_sample_is_counted_in_the_consumed_source_clock() {
+        let state = Arc::new(Mutex::new(OutputState {
+            generation: 1,
+            content: Content::Samples {
+                data: Arc::new(vec![0.0; 4]),
+                frame: 0,
+                start_secs: 0.0,
+                loop_region: None,
+                arrangement: true,
+            },
+        }));
+        let control = Arc::new(OutputControl::new());
+        let mut cursor = RenderCursor::new(state, control);
+        let stop = AtomicBool::new(false);
+        assert_eq!(cursor.next_frame(&stop).engine_frame, 1);
+        let final_frame = cursor.next_frame(&stop);
+        assert_eq!(final_frame.engine_frame, 2);
+        assert!(final_frame.finished);
+        assert_eq!(cursor.next_frame(&stop).engine_frame, 2);
+    }
+    #[test]
+    fn source_change_discards_prefetch_and_continues_the_last_consumed_clock() {
+        let state = Arc::new(Mutex::new(OutputState {
+            generation: 1,
+            content: Content::Samples {
+                data: Arc::new(vec![0.0; 1024]),
+                frame: 0,
+                start_secs: 0.0,
+                loop_region: None,
+                arrangement: true,
+            },
+        }));
+        let control = Arc::new(OutputControl::new());
+        let mut cursor = RenderCursor::new(state.clone(), control.clone());
+        let stop = AtomicBool::new(false);
+        assert_eq!(cursor.next_frame(&stop).engine_frame, 1);
+        control.set_test_clock(1);
+        {
+            let mut state = state.lock().unwrap();
+            state.generation = control.advance();
+        }
+        assert_eq!(cursor.next_frame(&stop).engine_frame, 2);
     }
     #[test]
     fn stereo_conversion_preserves_channels() {

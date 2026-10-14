@@ -9,6 +9,17 @@ fn run(request: Value) -> Result<Value, String> {
     let args = &request["args"];
     let path = |key: &str| args[key].as_str().ok_or_else(|| format!("Missing {key}"));
     match request["command"].as_str().unwrap_or("") {
+        "audio_deck_clock_smoke" => {
+            let playback = devolution_deck_lib::PlaybackHandle::new()?;
+            playback.play_silent_test_decks()?;
+            let seconds=args["seconds"].as_u64().unwrap_or(10).clamp(1,60);
+            std::thread::sleep(std::time::Duration::from_secs(seconds));
+            let snapshot=playback.performance_snapshot().ok_or("No consumed performance clock")?;
+            let diagnostics=playback.diagnostics()?;
+            if snapshot.deck_mask != 3 || snapshot.engine_frame < (seconds-1)*48000 { return Err("Deck clock or loop stopped unexpectedly".into()); }
+            playback.stop();
+            Ok(json!({"snapshot":snapshot,"output":diagnostics}))
+        }
         "audio_output_smoke" => {
             let playback = devolution_deck_lib::PlaybackHandle::new()?;
             let seconds = args["seconds"].as_u64().unwrap_or(2).clamp(1,60);

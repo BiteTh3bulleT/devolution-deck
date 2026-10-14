@@ -25,6 +25,7 @@ async function dispatch(command, args) {
   if (command.startsWith('audio_lab_')) return native(command, args);
   switch (command) {
     case 'project_get': return project;
+    case 'deck_performance_status': return {project_id:project.id,playing:false,snapshot:null,decks:project.decks};
     case 'project_new': project = await native('project_new'); return project;
     case 'project_patch': project = await native('project_patch', { ...args, current: project }); return project;
     case 'media_import_audio': { const analysis = await native('audio_lab_analyze', { path: args.path }); const imported = asset(args.path, analysis); project.media.push(imported); return imported; }

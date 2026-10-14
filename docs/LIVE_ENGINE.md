@@ -1,4 +1,4 @@
-# Live DJ and stage engine — v0.4
+# Live DJ and stage engine — v0.6
 
 The user-selected lead workflow is live DJ and stage performance. A full professional DAW remains a multi-release program; v0.4 establishes an inspectable native output boundary and cue routing.
 
@@ -16,7 +16,7 @@ Arrangement preparation happens off the Tauri UI task. Native start tickets ensu
 
 ## Boundaries still to replace
 
-Arrangement playback is still rendered into a whole buffer before starting. Project refresh still re-renders it. Deck assets are fully decoded/cached, and their producer positions lead audible output by the queued frames. The shared stage/MIDI/lighting scheduler is not yet a sample-accurate engine clock. Persistent DSP/VST graph processing, plugin latency compensation and plugin crash isolation remain future work. Existing deck pitch-lock/filter preferences are not evidence of implemented independent time-stretch/filter DSP. Input software monitoring is explicitly marked planned. Current device conversion uses linear resampling, not a mastering-grade bandlimited resampler.
+Arrangement playback is still rendered into a whole buffer before starting. Project refresh still re-renders it. Deck assets are fully decoded/cached. Deck positions now come from frames consumed at the hardware callback boundary rather than the producer. The device itself can add further hardware latency. The shared stage/MIDI/lighting scheduler is not yet a sample-accurate engine clock. Persistent DSP/VST graph processing, plugin latency compensation and plugin crash isolation remain future work. Existing deck pitch-lock/filter preferences are not evidence of implemented independent time-stretch/filter DSP. Input software monitoring is explicitly marked planned. Current device conversion uses linear resampling, not a mastering-grade bandlimited resampler.
 
 ## Next implementation gates, in order
 
@@ -36,3 +36,22 @@ A 30-second silent hardware playback run on the local CORSAIR WASAPI device deli
 The React browser test uses an explicit native verification adapter and intercepted output-setting responses. Those fixtures never ship in production. The Windows installer contains the real native CPAL engine.
 
 Library references: https://docs.rs/cpal/0.15.3/cpal/ and https://docs.rs/rtrb/0.4.0/rtrb/.
+
+
+## v0.6 consumed performance clock
+
+The callback publishes a coherent generation-stamped snapshot: cumulative consumed source-engine frames, source position, both deck positions/playing flags, and main/cue peak levels after output clipping/routing gain. The internal source rate is 48 kHz. This source clock advances on valid played source frames, continues across loop wraps and source changes, and stops advancing on starvation or Stop. It is not a wall clock and does not yet schedule MIDI or lighting events. Device rate conversion propagates source-frame metadata; it does not imply a high-quality resampler.
+
+A single callback writer publishes atomic fields using a sequence stamp. Readers make at most three snapshot attempts and reject a changed/odd stamp; neither the callback nor readers wait on a telemetry mutex. Snapshot generations reject obsolete timing after seek/source changes. Deck command preparation and project_get now use callback-consumed positions. The deck view polls a compact telemetry endpoint at 50 ms with one in-flight request, rather than loading the entire project every 250 ms. Display refresh still depends on IPC/UI scheduling; this does not make user-interface events sample-accurate.
+
+Main/cue meters represent the peak within the last delivered callback. Mono main peaks account for downmix cancellation. Stopped output shows zero peaks. The existing callback allocation guard remains in place; concurrent snapshot consistency, queued-versus-consumed positions, generation invalidation, final silent frame accounting, and prefetch discard/clock continuity have regression coverage.
+
+Next: bounded sample-time commands and master beat scheduling, live block DSP and disk streaming, then controller/recovery qualification. The previously listed DAW limitations remain.
+
+
+Source changes now wait for a complete callback packet before priming, using a retained frame and fixed-capacity queue. This deliberately adds startup/prefill delay rather than starting a partial packet. Once primed, missing frames remain counted as underruns. A generation change during a callback silences its remainder before the new source is primed. It does not add click-free gain smoothing or in-place DSP updates; those remain follow-up work.
+
+The first 30-second silent two-deck hardware run exposed one startup underrun of 280 frames. After the prefill fix, the repeat delivered 2999 callbacks with zero underruns, invalid or clipped samples. Both independent deck loops remained active and the consumed source clock reached 1,439,520 frames. This is a short silent run on one WASAPI device, with cue disabled at hardware output; it does not qualify sustained real-track DJ use or physical headphone routing. UI clock/meter screenshots use explicitly intercepted fixture responses and are separate from this native device test.
+
+
+Crossfader and headphone-cue gain changes now update matching cached deck sources in place. They preserve producer cursors and clock generation instead of flushing/restarting the queue. Their effect arrives after the already-queued frames and producer block. This does not yet implement gain smoothing; click-free parameter ramps are part of the live DSP milestone. A regression test verifies unchanged cursor/generation with changed main/cue gains.

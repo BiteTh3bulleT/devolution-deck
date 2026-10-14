@@ -3,7 +3,7 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use rtrb::{Consumer, RingBuffer};
 use serde::{Deserialize, Serialize};
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering},
     Arc,
 };
 use std::time::{Duration, Instant};
@@ -24,6 +24,69 @@ pub(crate) struct AudioFrame {
     pub position_ms: u64,
     pub generation: u64,
     pub finished: bool,
+    pub engine_frame: u64,
+    pub deck_positions: [f64; 2],
+    pub deck_mask: u8,
+}
+/// Single callback writer, bounded snapshot readers; no locks or allocation.
+#[derive(Clone, Copy, Default, Debug, Serialize)]
+pub struct PerformanceSnapshot {
+    pub generation: u64,
+    pub engine_frame: u64,
+    pub position_ms: u64,
+    pub deck_positions: [f64; 2],
+    pub deck_mask: u8,
+    pub main_peak: f32,
+    pub cue_peak: f32,
+}
+#[derive(Default)]
+struct Telemetry {
+    sequence: AtomicU64,
+    generation: AtomicU64,
+    clock: AtomicU64,
+    position: AtomicU64,
+    decks: [AtomicU64; 2],
+    mask: AtomicU32,
+    main: AtomicU32,
+    cue: AtomicU32,
+}
+impl Telemetry {
+    fn publish(&self, value: PerformanceSnapshot) {
+        self.sequence.fetch_add(1, Ordering::SeqCst);
+        self.generation.store(value.generation, Ordering::SeqCst);
+        self.clock.store(value.engine_frame, Ordering::SeqCst);
+        self.position.store(value.position_ms, Ordering::SeqCst);
+        for i in 0..2 {
+            self.decks[i].store(value.deck_positions[i].to_bits(), Ordering::SeqCst);
+        }
+        self.mask.store(value.deck_mask as u32, Ordering::SeqCst);
+        self.main.store(value.main_peak.to_bits(), Ordering::SeqCst);
+        self.cue.store(value.cue_peak.to_bits(), Ordering::SeqCst);
+        self.sequence.fetch_add(1, Ordering::SeqCst);
+    }
+    fn read(&self) -> Option<PerformanceSnapshot> {
+        for _ in 0..3 {
+            let before = self.sequence.load(Ordering::SeqCst);
+            if before & 1 != 0 {
+                continue;
+            }
+            let result = PerformanceSnapshot {
+                generation: self.generation.load(Ordering::SeqCst),
+                engine_frame: self.clock.load(Ordering::SeqCst),
+                position_ms: self.position.load(Ordering::SeqCst),
+                deck_positions: std::array::from_fn(|i| {
+                    f64::from_bits(self.decks[i].load(Ordering::SeqCst))
+                }),
+                deck_mask: self.mask.load(Ordering::SeqCst) as u8,
+                main_peak: f32::from_bits(self.main.load(Ordering::SeqCst)),
+                cue_peak: f32::from_bits(self.cue.load(Ordering::SeqCst)),
+            };
+            if before == self.sequence.load(Ordering::SeqCst) {
+                return Some(result);
+            }
+        }
+        None
+    }
 }
 #[derive(Default)]
 struct Statistics {
@@ -43,6 +106,8 @@ pub(crate) struct OutputControl {
     requested: AtomicBool,
     finished_generation: AtomicU64,
     pub position_ms: AtomicU64,
+    telemetry: Telemetry,
+    consumed_clock: AtomicU64,
 }
 impl OutputControl {
     pub fn new() -> Self {
@@ -51,7 +116,21 @@ impl OutputControl {
             requested: AtomicBool::new(false),
             finished_generation: AtomicU64::new(0),
             position_ms: AtomicU64::new(0),
+            telemetry: Telemetry::default(),
+            consumed_clock: AtomicU64::new(0),
         }
+    }
+    pub fn snapshot(&self) -> Option<PerformanceSnapshot> {
+        self.telemetry
+            .read()
+            .filter(|s| s.generation == self.generation.load(Ordering::Acquire))
+    }
+    #[cfg(test)]
+    pub fn set_test_clock(&self, frame: u64) {
+        self.consumed_clock.store(frame, Ordering::Release);
+    }
+    pub fn last_clock_frame(&self) -> u64 {
+        self.consumed_clock.load(Ordering::Acquire)
     }
     pub fn advance(&self) -> u64 {
         self.generation.fetch_add(1, Ordering::AcqRel) + 1
@@ -193,11 +272,27 @@ struct CallbackKernel {
     control: Arc<OutputControl>,
     stats: Arc<Statistics>,
     armed_generation: u64,
+    pending: Option<AudioFrame>,
     main_channels: [u16; 2],
     cue_channels: Option<[u16; 2]>,
     cue_gain: f32,
 }
 impl CallbackKernel {
+    fn next(&mut self, epoch: u64) -> Option<AudioFrame> {
+        if let Some(frame) = self.pending.take() {
+            if frame.generation == epoch {
+                return Some(frame);
+            }
+        }
+        for _ in 0..QUEUE_CAPACITY {
+            match self.queue.pop() {
+                Ok(frame) if frame.generation == epoch => return Some(frame),
+                Ok(_) => continue,
+                Err(_) => return None,
+            }
+        }
+        None
+    }
     /// Never waits, allocates, logs or acquires a mutex. Stale-queue drain is bounded by queue capacity.
     fn fill<T: cpal::Sample + cpal::FromSample<f32>>(&mut self, data: &mut [T], channels: usize) {
         let began = Instant::now();
@@ -205,19 +300,25 @@ impl CallbackKernel {
         let mut bad = 0u64;
         let mut clipped = 0u64;
         let mut position = None;
+        let mut main_peak = 0.0f32;
+        let mut cue_peak = 0.0f32;
+        let epoch = self.control.generation.load(Ordering::Acquire);
+        let callback_epoch = epoch;
+        let mut priming = false;
+        if self.control.is_playing() && self.armed_generation != epoch {
+            let first = self.next(epoch);
+            let required = (data.len() / channels.max(1)).min(QUEUE_CAPACITY / 2);
+            priming =
+                first.is_none() || self.queue.slots() + usize::from(first.is_some()) < required;
+            self.pending = first;
+        }
         for output in data.chunks_mut(channels.max(1)) {
             let epoch = self.control.generation.load(Ordering::Acquire);
-            let mut value = None;
-            for _ in 0..QUEUE_CAPACITY {
-                match self.queue.pop() {
-                    Ok(frame) if frame.generation == epoch => {
-                        value = Some(frame);
-                        break;
-                    }
-                    Ok(_) => continue,
-                    Err(_) => break,
-                }
-            }
+            let value = if priming || epoch != callback_epoch {
+                None
+            } else {
+                self.next(epoch)
+            };
             let active = self.control.is_playing();
             let mut bus = [0.0f32; 4];
             if active {
@@ -229,13 +330,20 @@ impl CallbackKernel {
                         bus[2] = frame.cue_left * self.cue_gain;
                         bus[3] = frame.cue_right * self.cue_gain;
                     }
-                    position = Some((epoch, frame.position_ms));
+                    position = Some(PerformanceSnapshot {
+                        generation: epoch,
+                        engine_frame: frame.engine_frame,
+                        position_ms: frame.position_ms,
+                        deck_positions: frame.deck_positions,
+                        deck_mask: frame.deck_mask,
+                        ..Default::default()
+                    });
                     if frame.finished {
                         self.control
                             .finished_generation
                             .store(epoch, Ordering::Release);
                     }
-                } else if self.armed_generation == epoch {
+                } else if !priming && self.armed_generation == epoch {
                     missing += 1;
                 }
             }
@@ -247,6 +355,12 @@ impl CallbackKernel {
                 clipped += u64::from(sample.abs() > 1.0);
                 *sample = sample.clamp(-1.0, 1.0);
             }
+            main_peak = main_peak.max(if channels == 1 {
+                ((bus[0] + bus[1]) * 0.5).abs()
+            } else {
+                bus[0].abs().max(bus[1].abs())
+            });
+            cue_peak = cue_peak.max(bus[2].abs()).max(bus[3].abs());
             for (i, sample) in output.iter_mut().enumerate() {
                 let value = if channels == 1 {
                     (bus[0] + bus[1]) * 0.5
@@ -264,9 +378,19 @@ impl CallbackKernel {
                 *sample = T::from_sample(value);
             }
         }
-        if let Some((epoch, ms)) = position {
-            if self.control.generation.load(Ordering::Acquire) == epoch {
-                self.control.position_ms.store(ms, Ordering::Release);
+        if let Some(mut snapshot) = position {
+            snapshot.main_peak = main_peak;
+            snapshot.cue_peak = cue_peak;
+            if self.control.generation.load(Ordering::Acquire) == snapshot.generation {
+                snapshot.engine_frame = self
+                    .control
+                    .consumed_clock
+                    .fetch_max(snapshot.engine_frame, Ordering::AcqRel)
+                    .max(snapshot.engine_frame);
+                self.control.telemetry.publish(snapshot);
+                self.control
+                    .position_ms
+                    .store(snapshot.position_ms, Ordering::Release);
             }
         }
         let duration = began.elapsed().as_nanos().min(u64::MAX as u128) as u64;
@@ -446,6 +570,7 @@ impl AudioOutput {
                         control: control.clone(),
                         stats: producer_stats.clone(),
                         armed_generation: 0,
+                        pending: None,
                         main_channels: worker_settings.main_channels,
                         cue_channels: worker_settings.cue_channels,
                         cue_gain: 10f32.powf(worker_settings.cue_gain_db as f32 / 20.0),
@@ -498,6 +623,9 @@ impl AudioOutput {
                                 position_ms: current.position_ms,
                                 generation: current.generation,
                                 finished: current.finished,
+                                engine_frame: current.engine_frame,
+                                deck_positions: current.deck_positions,
+                                deck_mask: current.deck_mask,
                             };
                             phase += ENGINE_RATE as f64 / rate as f64;
                             while phase >= 1.0 {
@@ -669,6 +797,7 @@ mod tests {
                 control,
                 stats: Arc::new(Statistics::default()),
                 armed_generation: 0,
+                pending: None,
                 main_channels: [0, 1],
                 cue_channels: None,
                 cue_gain: 1.0,
@@ -684,7 +813,85 @@ mod tests {
             position_ms: pos,
             generation: 1,
             finished: false,
+            ..Default::default()
         }
+    }
+    #[test]
+    fn a_source_waits_for_a_complete_callback_packet_before_it_is_primed() {
+        let (mut p, mut k) = fixture();
+        p.push(sample(0.25, 0.25, 1)).unwrap();
+        let mut out = [1f32; 8];
+        k.fill(&mut out, 2);
+        assert_eq!(out, [0.; 8]);
+        assert_eq!(k.stats.underrun_frames.load(Ordering::Relaxed), 0);
+        for i in 2..=4 {
+            p.push(sample(0.25, 0.25, i)).unwrap();
+        }
+        k.fill(&mut out, 2);
+        assert_eq!(out, [0.25; 8]);
+        assert_eq!(k.control.position_ms.load(Ordering::Relaxed), 4);
+        k.fill(&mut out, 2);
+        assert_eq!(k.stats.underrun_frames.load(Ordering::Relaxed), 4);
+    }
+    #[test]
+    fn telemetry_reports_only_callback_consumed_deck_positions_and_meters() {
+        let (mut p, mut k) = fixture();
+        k.cue_channels = Some([2, 3]);
+        k.cue_gain = 0.5;
+        p.push(AudioFrame {
+            engine_frame: 48,
+            deck_positions: [0.001, 3.0],
+            deck_mask: 3,
+            cue_left: 0.8,
+            ..sample(0.2, -0.4, 1)
+        })
+        .unwrap();
+        p.push(AudioFrame {
+            engine_frame: 96,
+            deck_positions: [0.002, 3.001],
+            deck_mask: 3,
+            ..sample(0.9, 0.9, 2)
+        })
+        .unwrap();
+        assert!(k.control.snapshot().is_none());
+        k.fill(&mut [0f32; 4], 4);
+        let status = k.control.snapshot().unwrap();
+        assert_eq!(status.engine_frame, 48);
+        assert_eq!(status.deck_positions, [0.001, 3.0]);
+        assert_eq!(status.main_peak, 0.4);
+        assert_eq!(status.cue_peak, 0.4);
+    }
+    #[test]
+    fn seek_invalidates_old_telemetry_until_new_generation_is_consumed() {
+        let (mut p, mut k) = fixture();
+        p.push(sample(0.2, 0.2, 5)).unwrap();
+        k.fill(&mut [0f32; 2], 2);
+        assert!(k.control.snapshot().is_some());
+        k.control.advance();
+        assert!(k.control.snapshot().is_none());
+    }
+    #[test]
+    fn telemetry_snapshot_never_mixes_concurrent_clock_and_deck_updates() {
+        let telemetry = Arc::new(Telemetry::default());
+        let writer = telemetry.clone();
+        let worker = std::thread::spawn(move || {
+            for clock in 1..20000 {
+                writer.publish(PerformanceSnapshot {
+                    engine_frame: clock,
+                    deck_positions: [clock as f64, clock as f64 * 2.0],
+                    ..Default::default()
+                });
+            }
+        });
+        for _ in 0..20000 {
+            if let Some(s) = telemetry.read() {
+                assert_eq!(
+                    s.deck_positions,
+                    [s.engine_frame as f64, s.engine_frame as f64 * 2.0]
+                );
+            }
+        }
+        worker.join().unwrap();
     }
     #[test]
     fn queue_adapts_when_the_driver_ignores_requested_buffer_size() {

@@ -1009,3 +1009,10 @@ export async function audioOutputResetStatistics() {
 export async function deckSetHeadphoneCue(deckId: string, enabled: boolean) {
   return invoke<DeckState>('deck_set_headphone_cue', { deckId, enabled });
 }
+
+export interface DeckPerformanceStatus {
+  project_id: string; playing: boolean;
+  snapshot: { generation: number; engine_frame: number; position_ms: number; deck_positions: [number,number]; deck_mask: number; main_peak: number; cue_peak: number } | null;
+  decks: DeckState[];
+}
+export const deckPerformanceStatus = () => invoke<DeckPerformanceStatus>('deck_performance_status');

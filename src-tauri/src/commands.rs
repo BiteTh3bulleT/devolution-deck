@@ -91,6 +91,14 @@ fn apply_deck_playback(
     }
 }
 
+fn apply_deck_gains(state: &State<AppState>, mix: Option<Vec<crate::audio::PlayingDeck>>) -> Result<(), String> {
+    if let Some(mix)=mix {
+        if state.playback.update_deck_gains(&mix)? { return Ok(()); }
+        return apply_deck_playback(state,Some(mix));
+    }
+    Ok(())
+}
+
 fn prepare_deck_playback(
     project: &Project,
 ) -> Result<Option<Vec<crate::audio::PlayingDeck>>, String> {
@@ -1127,6 +1135,33 @@ pub async fn playback_play_arrangement(
         channels: playback.buffer.channels,
     });
     Ok(())
+}
+
+#[derive(Serialize)]
+pub struct DeckPerformanceStatus {
+    project_id: String,
+    playing: bool,
+    snapshot: Option<crate::audio::output::PerformanceSnapshot>,
+    decks: Vec<DeckState>,
+}
+#[tauri::command]
+pub fn deck_performance_status(state: State<AppState>) -> Result<DeckPerformanceStatus, String> {
+    let mut project = state.project.lock().map_err(|_| "lock")?;
+    sync_deck_positions(&state, &mut project);
+    let playing = state.playback.is_playing();
+    let mut snapshot = state.playback.performance_snapshot();
+    if !playing {
+        if let Some(s) = &mut snapshot {
+            s.main_peak = 0.0;
+            s.cue_peak = 0.0;
+        }
+    }
+    Ok(DeckPerformanceStatus {
+        project_id: project.id.clone(),
+        playing,
+        snapshot,
+        decks: project.decks.clone(),
+    })
 }
 
 #[tauri::command]
@@ -2931,7 +2966,7 @@ pub fn deck_set_headphone_cue(
         (out, prepare_deck_playback(&project)?)
     };
     if mix.is_some() {
-        apply_deck_playback(&state, mix)?;
+        apply_deck_gains(&state, mix)?;
     }
     Ok(deck)
 }
@@ -3360,7 +3395,7 @@ pub fn crossfader_update(
         (crossfader.clone(), mix)
     };
     if mix.is_some() {
-        apply_deck_playback(&state, mix)?;
+        apply_deck_gains(&state, mix)?;
     }
     Ok(updated)
 }
