@@ -1,11 +1,11 @@
 {
   "name": "devolution-deck",
   "private": true,
-  "version": "0.6.0",
+  "version": "0.6.1",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -b && vite build && node scripts/verify-dist-assets.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "tauri": "node scripts/tauri.mjs",

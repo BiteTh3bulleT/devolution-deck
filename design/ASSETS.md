@@ -34,3 +34,10 @@ ImageGen created src/assets/ui/v5/alien-mothership.png: midnight-violet cosmic a
 Seven physical control sprites were re-rendered in Blender 5.2.0 LTS / Cycles with violet metal, cyan rim lights, lime indices and magenta status lamps. Editable scenes: design/blender/devolution-cosmic-controls.blend; generator: design/blender/render_cosmic_controls.py. This preserves the existing keyboard, drag, fine adjustment and reset behavior.
 
 The default theme changes to midnight violet, neon cyan, pink, warm gold and pale acid green. Prior stock themes are mapped visually when opened; custom saved colors remain respected. No project schema change is needed.
+
+
+## v0.6.1 production artwork packaging fix
+
+The original cosmic CSS used a relative source path that survived the Tailwind/Vite build unchanged. It displayed in development but the referenced image was not bundled in the native executable. Cosmic background references now use Vite-resolved /src/assets paths and become hashed /assets URLs in production. scripts/verify-dist-assets.mjs runs after every production build and checks local HTML/CSS asset references. A reproduction of the original broken path fails that check.
+
+The repaired portable was verified at the binary level: its compressed artwork decompresses to the original ImageGen PNG, and both that artwork and the stylesheet referencing its hashed production name are present in the native executable. Native screenshot automation was unavailable for this check; embedded asset verification is separate from visual runtime verification.
