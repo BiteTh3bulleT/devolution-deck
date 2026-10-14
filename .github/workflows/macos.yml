@@ -1,0 +1,64 @@
+name: Mac app and live scratch
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  mac:
+    name: Mac ${{ matrix.arch }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: Apple-Silicon
+          - runner: macos-15-intel
+            arch: Intel
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "13.0"
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_PROFILE_TEST_DEBUG: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native dependencies
+        shell: bash
+        run: |
+          command -v cmake || brew install cmake
+          git clone --depth 1 --recurse-submodules --shallow-submodules https://github.com/steinbergmedia/vst3sdk.git "$RUNNER_TEMP/vst3sdk"
+          echo "VST3_SDK_PATH=$RUNNER_TEMP/vst3sdk" >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - name: Native scratch and audio tests
+        run: node scripts/cargo.mjs test --locked
+      - name: Package Mac app and DMG
+        run: node scripts/tauri.mjs build --bundles app,dmg -- --locked
+      - name: Verify artwork inside the actual Mac executable
+        run: node scripts/verify-native-assets.mjs "src-tauri/target/release/bundle/macos/DEVOLUTION DECK.app/Contents/MacOS/devolution-deck" > mac-assets.json
+      - name: Package app without losing bundle metadata
+        shell: bash
+        run: |
+          mkdir -p mac-output
+          ditto -c -k --sequesterRsrc --keepParent "src-tauri/target/release/bundle/macos/DEVOLUTION DECK.app" "mac-output/Devolution-Deck-0.8.0-${{ matrix.arch }}.app.zip"
+          cp src-tauri/target/release/bundle/dmg/*.dmg mac-output/
+          cp mac-assets.json mac-output/
+          cp docs/MAC_BUILD.md mac-output/README.txt
+          shasum -a 256 mac-output/*.zip mac-output/*.dmg > mac-output/SHA256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Devolution-Deck-0.8.0-Mac-${{ matrix.arch }}
+          path: mac-output/
+          if-no-files-found: error
+          retention-days: 30
